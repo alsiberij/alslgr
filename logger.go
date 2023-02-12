@@ -37,19 +37,18 @@ func (l *logger) Write(b []byte) (int, error) {
 func (l *logger) write(b []byte) error {
 	bLen := len(b)
 
-	if bLen > l.capacity {
-		return l.dumper.Dump(b)
-	}
-
 	if l.capacity-l.length < bLen {
 		err := l.dump()
 		if err != nil {
 			return err
 		}
+
+		if l.capacity < bLen {
+			return l.dumper.Dump(b)
+		}
 	}
 
-	copy(l.buffer[l.length:], b)
-	l.length += bLen
+	l.length += copy(l.buffer[l.length:], b)
 
 	return nil
 }

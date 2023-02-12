@@ -41,7 +41,6 @@ type (
 		Dumper                     Dumper
 		Data                       [][]byte
 		DumpedDataBeforeManualDump []byte
-		ExpectedConstructorErr     error
 		ExpectedWriteErrs          []error
 		ExpectedDumpErr            error
 	}
@@ -50,51 +49,58 @@ type (
 func PrepareTests() []Testcase {
 	return []Testcase{
 		{
-			Name:   "CAP 1 DATA 'A'",
+			Name:   "REGULAR WRITING",
 			Cap:    1,
 			Dumper: &TestDumper{},
 			Data: [][]byte{
 				[]byte("A"),
 			},
 			DumpedDataBeforeManualDump: []byte{},
-			ExpectedConstructorErr:     nil,
 			ExpectedWriteErrs:          []error{nil},
 			ExpectedDumpErr:            nil,
 		},
 		{
-			Name:   "CAP 1 DATA 'AA'",
+			Name:   "WRITING ENTRY LARGER THAT BUFFER SIZE",
 			Cap:    1,
 			Dumper: &TestDumper{},
 			Data: [][]byte{
-				[]byte("AA"),
+				[]byte("AB"),
 			},
-			DumpedDataBeforeManualDump: []byte("AA"),
-			ExpectedConstructorErr:     nil,
+			DumpedDataBeforeManualDump: []byte("AB"),
 			ExpectedWriteErrs:          []error{nil},
 			ExpectedDumpErr:            nil,
 		},
 		{
-			Name:   "CAP 2 DATA 'A'+'A'+'A'",
+			Name:   "WRITING ENTRY LARGER THAT BUFFER SIZE WITH FILLED BUFFER",
 			Cap:    2,
 			Dumper: &TestDumper{},
 			Data: [][]byte{
-				[]byte("A"), []byte("A"), []byte("A"),
+				[]byte("A"), []byte("BCD"),
 			},
-			DumpedDataBeforeManualDump: []byte("AA"),
-			ExpectedConstructorErr:     nil,
+			DumpedDataBeforeManualDump: []byte("ABCD"),
+			ExpectedWriteErrs:          []error{nil, nil},
+			ExpectedDumpErr:            nil,
+		},
+		{
+			Name:   "WRITING ENTRIES WITH OVERFLOW",
+			Cap:    2,
+			Dumper: &TestDumper{},
+			Data: [][]byte{
+				[]byte("A"), []byte("B"), []byte("C"),
+			},
+			DumpedDataBeforeManualDump: []byte("AB"),
 			ExpectedWriteErrs:          []error{nil, nil, nil},
 			ExpectedDumpErr:            nil,
 		},
 		{
-			Name:   "CAP 2 DATA 'A'+'A'+'A'+'A'",
+			Name:   "WRITING ENTRIES WITH DOUBLE OVERFLOW",
 			Cap:    2,
 			Dumper: &TestDumper{},
 			Data: [][]byte{
-				[]byte("A"), []byte("A"), []byte("A"), []byte("A"),
+				[]byte("A"), []byte("B"), []byte("C"), []byte("D"), []byte("E"),
 			},
-			DumpedDataBeforeManualDump: []byte("AA"),
-			ExpectedConstructorErr:     nil,
-			ExpectedWriteErrs:          []error{nil, nil, nil, nil},
+			DumpedDataBeforeManualDump: []byte("ABCD"),
+			ExpectedWriteErrs:          []error{nil, nil, nil, nil, nil},
 			ExpectedDumpErr:            nil,
 		},
 		{
@@ -105,7 +111,6 @@ func PrepareTests() []Testcase {
 				[]byte(ForcedErrorMessage), []byte("A"),
 			},
 			DumpedDataBeforeManualDump: []byte{},
-			ExpectedConstructorErr:     nil,
 			ExpectedWriteErrs:          []error{nil, forcedError},
 			ExpectedDumpErr:            forcedError,
 		},
@@ -159,7 +164,7 @@ func TestLogger(t *testing.T) {
 		givenResult := (*bytes.Buffer)(test.Dumper.(*TestDumper)).Bytes()
 		expectedResult := mergeBytes(test.Data)
 		if !bytes.Equal(givenResult, expectedResult) {
-			t.Errorf("TEST \"%s\" FAILED: EXPECTED DATA AFTER MANUAL DUMP %s GOT %s\n",
+			t.Errorf("TEST \"%s\" FAILED: EXPECTED DATA AFTER MANUAL DUMP \"%s\" GOT \"%s\"\n",
 				test.Name, expectedResult, givenResult)
 		}
 	}
