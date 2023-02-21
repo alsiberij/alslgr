@@ -9,7 +9,8 @@ type (
 	}
 )
 
-func NewStdOutDumper() Dumper {
+// NewStdoutDumper provides an implementation of Dumper interface that is used for dumping data to a standard output
+func NewStdoutDumper() Dumper {
 	return &stdOutDumper{}
 }
 
