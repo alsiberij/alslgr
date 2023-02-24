@@ -13,25 +13,40 @@ import (
 	"time"
 )
 
+type (
+	TestDumper struct {
+		Buf        bytes.Buffer
+		NoErr      bool
+		ErrCounter int
+		Errs       []error
+	}
+)
+
 const (
-	ForcedErrorMessage = "FORCED ERROR"
+	Concurrency       = 1000
+	AutoDumpTestDelay = time.Millisecond * 300
 )
 
 var (
-	forcedError = errors.New(ForcedErrorMessage)
-)
-
-type (
-	TestDumper bytes.Buffer
+	forcedError            = errors.New("forced error")
+	errInvalidErrorCounter = errors.New("invalid error counter")
 )
 
 func (d *TestDumper) Dump(b []byte) error {
-	if string(b) == ForcedErrorMessage {
-		return forcedError
-	} else {
-		_, err := (*bytes.Buffer)(d).Write(b)
-		return err
+	if !d.NoErr {
+		if d.ErrCounter >= len(d.Errs) {
+			return errInvalidErrorCounter
+		}
+
+		err := d.Errs[d.ErrCounter]
+		d.ErrCounter++
+
+		if err != nil {
+			return err
+		}
 	}
+	_, _ = d.Buf.Write(b)
+	return nil
 }
 
 type (
@@ -42,77 +57,94 @@ type (
 		Data                       [][]byte
 		DumpedDataBeforeManualDump []byte
 		ExpectedWriteErrs          []error
-		ExpectedDumpErr            error
 	}
 )
 
 func PrepareTests() []Testcase {
 	return []Testcase{
 		{
-			Name:   "REGULAR WRITING",
-			Cap:    1,
-			Dumper: &TestDumper{},
+			Name: "REGULAR WRITING",
+			Cap:  1,
+			Dumper: &TestDumper{
+				Errs: []error{nil},
+			},
 			Data: [][]byte{
 				[]byte("A"),
 			},
 			DumpedDataBeforeManualDump: []byte{},
 			ExpectedWriteErrs:          []error{nil},
-			ExpectedDumpErr:            nil,
 		},
 		{
-			Name:   "WRITING ENTRY LARGER THAT BUFFER SIZE",
-			Cap:    1,
-			Dumper: &TestDumper{},
+			Name: "WRITING ENTRY LARGER THAN BUFFER SIZE",
+			Cap:  1,
+			Dumper: &TestDumper{
+				Errs: []error{nil, nil, nil},
+			},
 			Data: [][]byte{
 				[]byte("AB"),
 			},
 			DumpedDataBeforeManualDump: []byte("AB"),
 			ExpectedWriteErrs:          []error{nil},
-			ExpectedDumpErr:            nil,
 		},
 		{
-			Name:   "WRITING ENTRY LARGER THAT BUFFER SIZE WITH FILLED BUFFER",
-			Cap:    2,
-			Dumper: &TestDumper{},
+			Name: "WRITING ENTRY LARGER THAN BUFFER SIZE WITH FILLED BUFFER",
+			Cap:  2,
+			Dumper: &TestDumper{
+				Errs: []error{nil, nil, nil},
+			},
 			Data: [][]byte{
 				[]byte("A"), []byte("BCD"),
 			},
 			DumpedDataBeforeManualDump: []byte("ABCD"),
 			ExpectedWriteErrs:          []error{nil, nil},
-			ExpectedDumpErr:            nil,
 		},
 		{
-			Name:   "WRITING ENTRIES WITH OVERFLOW",
-			Cap:    2,
-			Dumper: &TestDumper{},
+			Name: "WRITING ENTRIES WITH OVERFLOW",
+			Cap:  2,
+			Dumper: &TestDumper{
+				Errs: []error{nil, nil},
+			},
 			Data: [][]byte{
 				[]byte("A"), []byte("B"), []byte("C"),
 			},
 			DumpedDataBeforeManualDump: []byte("AB"),
 			ExpectedWriteErrs:          []error{nil, nil, nil},
-			ExpectedDumpErr:            nil,
 		},
 		{
-			Name:   "WRITING ENTRIES WITH DOUBLE OVERFLOW",
-			Cap:    2,
-			Dumper: &TestDumper{},
+			Name: "WRITING ENTRIES WITH DOUBLE OVERFLOW",
+			Cap:  2,
+			Dumper: &TestDumper{
+				Errs: []error{nil, nil, nil},
+			},
 			Data: [][]byte{
 				[]byte("A"), []byte("B"), []byte("C"), []byte("D"), []byte("E"),
 			},
 			DumpedDataBeforeManualDump: []byte("ABCD"),
 			ExpectedWriteErrs:          []error{nil, nil, nil, nil, nil},
-			ExpectedDumpErr:            nil,
 		},
 		{
-			Name:   "DUMPER FORCED ERROR",
-			Cap:    12,
-			Dumper: &TestDumper{},
+			Name: "DUMPER FORCED ERROR",
+			Cap:  1,
+			Dumper: &TestDumper{
+				Errs: []error{forcedError, forcedError},
+			},
 			Data: [][]byte{
-				[]byte(ForcedErrorMessage), []byte("A"),
+				[]byte("A"), []byte("B"),
 			},
 			DumpedDataBeforeManualDump: []byte{},
 			ExpectedWriteErrs:          []error{nil, forcedError},
-			ExpectedDumpErr:            forcedError,
+		},
+		{
+			Name: "DUMPER ERROR ON LARGE ENTRY",
+			Cap:  4,
+			Dumper: &TestDumper{
+				Errs: []error{nil, forcedError, forcedError},
+			},
+			Data: [][]byte{
+				[]byte("ABC"), []byte("DEFGH"),
+			},
+			DumpedDataBeforeManualDump: []byte("ABC"),
+			ExpectedWriteErrs:          []error{nil, forcedError},
 		},
 	}
 }
@@ -146,7 +178,7 @@ func TestLogger(t *testing.T) {
 			}
 		}
 
-		dataBeforeDump := (*bytes.Buffer)(test.Dumper.(*TestDumper)).Bytes()
+		dataBeforeDump := test.Dumper.(*TestDumper).Buf.Bytes()
 
 		if !bytes.Equal(dataBeforeDump, test.DumpedDataBeforeManualDump) {
 			t.Errorf("TEST \"%s\" FAILED: EXPECTED DATA BEFORE MANUAL DUMP \"%s\" GOT \"%s\"\n",
@@ -154,14 +186,15 @@ func TestLogger(t *testing.T) {
 		}
 
 		err := l.DumpBuffer()
-		if !errors.Is(err, test.ExpectedDumpErr) {
-			t.Errorf("TEST \"%s\" FAILED: EXPECTED DUMP ERROR \"%v\" GOT %v\n", test.Name, test.ExpectedDumpErr, err)
+		expectedErr := test.Dumper.(*TestDumper).Errs[len(test.Dumper.(*TestDumper).Errs)-1]
+		if !errors.Is(err, expectedErr) {
+			t.Errorf("TEST \"%s\" FAILED: EXPECTED DUMP ERROR \"%v\" GOT %v\n", test.Name, expectedErr, err)
 		}
 		if err != nil {
 			continue
 		}
 
-		givenResult := (*bytes.Buffer)(test.Dumper.(*TestDumper)).Bytes()
+		givenResult := test.Dumper.(*TestDumper).Buf.Bytes()
 		expectedResult := mergeBytes(test.Data)
 		if !bytes.Equal(givenResult, expectedResult) {
 			t.Errorf("TEST \"%s\" FAILED: EXPECTED DATA AFTER MANUAL DUMP \"%s\" GOT \"%s\"\n",
@@ -170,12 +203,10 @@ func TestLogger(t *testing.T) {
 	}
 }
 
-const (
-	AutoDumpTestDelay = time.Millisecond * 300
-)
-
 func TestAutoDump(t *testing.T) {
-	d := &TestDumper{}
+	d := &TestDumper{
+		NoErr: true,
+	}
 	l := NewLogger(1<<3, d)
 
 	_, err := l.Write([]byte("A"))
@@ -207,18 +238,16 @@ func TestAutoDump(t *testing.T) {
 
 	cancel()
 
-	givenResult := string((*bytes.Buffer)(d).Bytes())
+	givenResult := string((d.Buf).Bytes())
 	if givenResult != "AAA" {
 		t.Errorf("TEST \"AUTO DUMP\" FAILED: EXPECTED DATA %s GOT %s\n", "AAA", givenResult)
 	}
 }
 
-const (
-	Concurrency = 10000
-)
-
 func TestConcurrentWrite(t *testing.T) {
-	d := &TestDumper{}
+	d := &TestDumper{
+		NoErr: true,
+	}
 	l := NewLogger(1<<12, d)
 
 	var wg sync.WaitGroup
@@ -242,14 +271,12 @@ func TestConcurrentWrite(t *testing.T) {
 		return
 	}
 
-	buf := (*bytes.Buffer)(d)
-
 	validate := regexp.MustCompile("^[0-9]+| GOROUTINE WRITE$").MatchString
 
 	checkArr := [Concurrency]bool{}
 	for {
 		var s string
-		s, err = buf.ReadString('\n')
+		s, err = d.Buf.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
 				break
