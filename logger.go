@@ -18,6 +18,11 @@ type (
 	}
 )
 
+// NewLogger returns a Logger interface which is an abstraction of logger having internal buffer with defined capacity
+// and implemented dumper. It is recommended to define pretty big capacity in order to minimize Dumper calls.
+// In other words, if average length of log entry equals 100 bytes and capacity is 10000 bytes, then Dumper calls amount
+// will decrease in 100 times. But keep in mind that dumping operation is blocking and in case of VERY big capacity
+// slow Dumper call will block other write operations. You can get rid of it by implementing non-blocking Dumper.
 func NewLogger(capacity int, dumper Dumper) Logger {
 	return &logger{
 		mx:       sync.Mutex{},
@@ -28,45 +33,38 @@ func NewLogger(capacity int, dumper Dumper) Logger {
 }
 
 func (l *logger) Write(b []byte) (int, error) {
+	bLen := len(b)
+
 	l.mx.Lock()
 	defer l.mx.Unlock()
 
-	return len(b), l.write(b)
-}
-
-func (l *logger) write(b []byte) error {
-	bLen := len(b)
-
 	if l.capacity-l.length < bLen {
-		err := l.dump()
+		err := l.dumper.Dump(l.buffer[:l.length])
 		if err != nil {
-			return err
+			return 0, err
 		}
 
+		l.length = 0
+
 		if l.capacity < bLen {
-			return l.dumper.Dump(b)
+			err = l.dumper.Dump(b)
+			if err != nil {
+				return 0, err
+			}
+			return bLen, nil
 		}
 	}
 
 	l.length += copy(l.buffer[l.length:], b)
 
-	return nil
+	return bLen, nil
 }
 
 func (l *logger) DumpBuffer() error {
 	l.mx.Lock()
 	defer l.mx.Unlock()
 
-	return l.dump()
-}
-
-func (l *logger) dump() error {
-	if l.length == 0 {
-		return nil
-	}
-
 	err := l.dumper.Dump(l.buffer[:l.length])
-
 	if err == nil {
 		l.length = 0
 	}
@@ -76,9 +74,20 @@ func (l *logger) dump() error {
 
 func (l *logger) AutoDumpBuffer(interval time.Duration) (<-chan error, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
-	errCh := make(chan error, 1)
+	errCh := make(chan error)
 
-	go repeatOpWorker(ctx, interval, errCh, l.DumpBuffer)
+	go func(ctx context.Context, interval time.Duration, errCh chan<- error, operation func() error) {
+		defer close(errCh)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(interval):
+				errCh <- operation()
+			}
+		}
+	}(ctx, interval, errCh, l.DumpBuffer)
 
 	return errCh, cancel
 }
