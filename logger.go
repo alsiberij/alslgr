@@ -110,6 +110,7 @@ func (l *Logger) autoDump(ctx context.Context, interval time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
 		case <-time.After(interval):
 			l.writeMu.Lock()
 			l.dumpMu.Lock()
