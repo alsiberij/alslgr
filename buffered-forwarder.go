@@ -15,22 +15,22 @@ type (
 		dataBatchCh chan DataBatch[B, T]
 
 		doneCh                   chan struct{}
-		manualForwardingSignalCh chan struct{}
-		reopenForwarderSignalCh  chan struct{}
+		manualForwardingSignalCh <-chan struct{}
+		reopenForwarderSignalCh  <-chan struct{}
 	}
 
 	Config[B, T any] struct {
 		DataBatchProducer        DataBatchProducer[B, T]
 		DataForwarder            DataForwarder[B, T]
-		ManualForwardingSignalCh chan struct{}
-		ReopenForwarderCh        chan struct{}
+		ManualForwardingSignalCh <-chan struct{}
+		ReopenForwarderCh        <-chan struct{}
 		ChannelsBuffer           int
 		BatchingConcurrency      int
 		ForwardingConcurrency    int
 	}
 )
 
-func NewBuffer[B, T any](config Config[B, T]) BufferedForwarded[B, T] {
+func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarded[B, T] {
 	b := BufferedForwarded[B, T]{
 		wg:                       &sync.WaitGroup{},
 		dataBatchProducer:        config.DataBatchProducer,

@@ -22,7 +22,7 @@ type (
 	}
 )
 
-func NewBuffer(config Config) (alslgr.BufferedForwarded[[][]byte, []byte], error) {
+func NewBufferedForwarder(config Config) alslgr.BufferedForwarded[[][]byte, []byte] {
 	dataBatchProducer := NewDataBatchProducer(config.BatchMaxLen)
 
 	dataForwarder := NewDataForwarder(config.Filename, config.LastResortWriter, config.MaxForwarderBufferLen)
@@ -33,7 +33,7 @@ func NewBuffer(config Config) (alslgr.BufferedForwarded[[][]byte, []byte], error
 	reopenForwarderCh := make(chan struct{}, 1)
 	go reopenForwarderOnSighup(config.ReopenForwarderDoneCh, config.SighupCh, reopenForwarderCh)
 
-	return alslgr.NewBuffer[[][]byte, []byte](alslgr.Config[[][]byte, []byte]{
+	return alslgr.NewBufferedForwarder[[][]byte, []byte](alslgr.Config[[][]byte, []byte]{
 		DataBatchProducer:        &dataBatchProducer,
 		DataForwarder:            &dataForwarder,
 		ManualForwardingSignalCh: manualForwardingSignalCh,
@@ -41,7 +41,7 @@ func NewBuffer(config Config) (alslgr.BufferedForwarded[[][]byte, []byte], error
 		ChannelsBuffer:           config.ChannelsBuffer,
 		BatchingConcurrency:      1,
 		ForwardingConcurrency:    1,
-	}), nil
+	})
 }
 
 func timedForward(doneCh <-chan struct{}, interval time.Duration, signalCh chan<- struct{}) {

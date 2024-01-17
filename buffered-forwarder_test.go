@@ -2,6 +2,6 @@ package alslgr
 
 import "testing"
 
-func TestBuffer(t *testing.T) {
+func TestBufferedForwarded(t *testing.T) {
 	//TRUST ME IT'S OK
 }
