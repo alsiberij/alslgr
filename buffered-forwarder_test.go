@@ -1,7 +1,9 @@
 package alslgr
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestBufferedForwarded(t *testing.T) {
-	//TRUST ME IT'S OK
+	// TRUST ME IT'S OK
 }
