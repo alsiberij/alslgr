@@ -5,23 +5,23 @@ import (
 )
 
 type (
-	Batch struct {
+	DataBatch struct {
 		aggregatedData [][]byte
 	}
 )
 
 var (
-	_ alslgr.DataBatch[[][]byte, []byte] = (*Batch)(nil)
+	_ alslgr.DataBatch[[][]byte, []byte] = (*DataBatch)(nil)
 )
 
-func (b *Batch) ReadyToSend() bool {
+func (b *DataBatch) ReadyToSend() bool {
 	return len(b.aggregatedData) == cap(b.aggregatedData)
 }
 
-func (b *Batch) Append(data []byte) {
+func (b *DataBatch) Append(data []byte) {
 	b.aggregatedData = append(b.aggregatedData, data)
 }
 
-func (b *Batch) Extract() [][]byte {
+func (b *DataBatch) Extract() [][]byte {
 	return b.aggregatedData
 }
