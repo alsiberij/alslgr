@@ -1,7 +1,9 @@
 package main
 
 import (
-	"github.com/alsiberij/alslgr/v3/files"
+	"fmt"
+	"github.com/alsiberij/alslgr/v3/file"
+	"github.com/alsiberij/alslgr/v3/stdout"
 	"os"
 	"os/signal"
 	"sync"
@@ -9,14 +11,14 @@ import (
 	"time"
 )
 
-func main() {
+func runFileForwarder() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP)
 
 	doneCh := make(chan struct{})
 	defer close(doneCh)
 
-	fileForwarder := files.NewBufferedForwarder(files.Config{
+	fileForwarder := file.NewBufferedForwarder(file.Config{
 		BatchMaxLen:           16,
 		Filename:              "log.txt",
 		LastResortWriter:      os.Stdout,
@@ -38,4 +40,29 @@ func main() {
 		}()
 	}
 	wg.Wait()
+}
+
+func runStdoutForwarder() {
+	stdoutForwarder := stdout.NewBufferedForwarder(stdout.Config{
+		BatchMaxLen:           32,
+		ChannelsBuffer:        0,
+		BatchingConcurrency:   16,
+		ForwardingConcurrency: 8,
+	})
+	defer stdoutForwarder.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100_000; i++ {
+		wg.Add(1)
+		go func(i int) {
+			stdoutForwarder.Write([]byte(fmt.Sprintf("%d\n", i)))
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
+}
+
+func main() {
+	runFileForwarder()
+	runStdoutForwarder()
 }

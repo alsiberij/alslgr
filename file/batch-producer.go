@@ -1,4 +1,4 @@
-package files
+package file
 
 import "github.com/alsiberij/alslgr/v3"
 

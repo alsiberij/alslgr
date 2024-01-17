@@ -6,7 +6,8 @@ import (
 
 type (
 	BufferedForwarded[B, T any] struct {
-		wg *sync.WaitGroup
+		workersWg           *sync.WaitGroup
+		workersForwardersWg *sync.WaitGroup
 
 		dataBatchProducer DataBatchProducer[B, T]
 		dataForwarder     DataForwarder[B, T]
@@ -32,7 +33,8 @@ type (
 
 func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarded[B, T] {
 	b := BufferedForwarded[B, T]{
-		wg:                       &sync.WaitGroup{},
+		workersWg:                &sync.WaitGroup{},
+		workersForwardersWg:      &sync.WaitGroup{},
 		dataBatchProducer:        config.DataBatchProducer,
 		dataForwarder:            config.DataForwarder,
 		dataCh:                   make(chan T, config.ChannelsBuffer),
@@ -43,12 +45,12 @@ func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarded[B, T]
 	}
 
 	for i := 0; i < config.BatchingConcurrency; i++ {
-		b.wg.Add(1)
+		b.workersWg.Add(1)
 		go b.worker()
 	}
 
 	for i := 0; i < config.ForwardingConcurrency; i++ {
-		b.wg.Add(1)
+		b.workersForwardersWg.Add(1)
 		go b.workerForwarder()
 	}
 
@@ -56,8 +58,7 @@ func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarded[B, T]
 }
 
 func (l *BufferedForwarded[B, T]) worker() {
-	defer l.wg.Done()
-	defer close(l.dataBatchCh)
+	defer l.workersWg.Done()
 
 	batch := l.dataBatchProducer.NewDataBatch()
 
@@ -65,6 +66,7 @@ func (l *BufferedForwarded[B, T]) worker() {
 		select {
 		case data, ok := <-l.dataCh:
 			if !ok {
+				l.dataBatchCh <- batch
 				return
 			}
 			batch.Append(data)
@@ -83,7 +85,7 @@ func (l *BufferedForwarded[B, T]) worker() {
 }
 
 func (l *BufferedForwarded[B, T]) workerForwarder() {
-	defer l.wg.Done()
+	defer l.workersForwardersWg.Done()
 	defer l.handleRemainingData()
 
 	for {
@@ -112,6 +114,10 @@ func (l *BufferedForwarded[B, T]) Write(data T) {
 func (l *BufferedForwarded[B, T]) Close() {
 	close(l.doneCh)
 	close(l.dataCh)
-	l.wg.Wait()
+	l.workersWg.Wait()
+
+	close(l.dataBatchCh)
+	l.workersForwardersWg.Wait()
+
 	l.dataForwarder.Close()
 }

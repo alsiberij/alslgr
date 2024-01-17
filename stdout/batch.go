@@ -1,4 +1,4 @@
-package files
+package stdout
 
 import (
 	"github.com/alsiberij/alslgr/v3"
