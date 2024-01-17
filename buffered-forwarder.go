@@ -1,6 +1,7 @@
 package alslgr
 
 import (
+	"context"
 	"sync"
 )
 
@@ -109,6 +110,15 @@ func (l *BufferedForwarder[B, T]) handleRemainingData() {
 
 func (l *BufferedForwarder[B, T]) Write(data T) {
 	l.dataCh <- data
+}
+
+func (l *BufferedForwarder[B, T]) WriteCtx(ctx context.Context, data T) error {
+	select {
+	case l.dataCh <- data:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (l *BufferedForwarder[B, T]) Close() {
