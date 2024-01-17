@@ -5,7 +5,7 @@ import (
 )
 
 type (
-	BufferedForwarded[B, T any] struct {
+	BufferedForwarder[B, T any] struct {
 		workersWg           *sync.WaitGroup
 		workersForwardersWg *sync.WaitGroup
 
@@ -31,8 +31,8 @@ type (
 	}
 )
 
-func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarded[B, T] {
-	b := BufferedForwarded[B, T]{
+func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarder[B, T] {
+	b := BufferedForwarder[B, T]{
 		workersWg:                &sync.WaitGroup{},
 		workersForwardersWg:      &sync.WaitGroup{},
 		dataBatchProducer:        config.DataBatchProducer,
@@ -57,7 +57,7 @@ func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarded[B, T]
 	return b
 }
 
-func (l *BufferedForwarded[B, T]) worker() {
+func (l *BufferedForwarder[B, T]) worker() {
 	defer l.workersWg.Done()
 
 	batch := l.dataBatchProducer.NewDataBatch()
@@ -84,7 +84,7 @@ func (l *BufferedForwarded[B, T]) worker() {
 	}
 }
 
-func (l *BufferedForwarded[B, T]) workerForwarder() {
+func (l *BufferedForwarder[B, T]) workerForwarder() {
 	defer l.workersForwardersWg.Done()
 	defer l.handleRemainingData()
 
@@ -101,17 +101,17 @@ func (l *BufferedForwarded[B, T]) workerForwarder() {
 	}
 }
 
-func (l *BufferedForwarded[B, T]) handleRemainingData() {
+func (l *BufferedForwarder[B, T]) handleRemainingData() {
 	for data := range l.dataCh {
 		l.dataForwarder.ForwardData(data)
 	}
 }
 
-func (l *BufferedForwarded[B, T]) Write(data T) {
+func (l *BufferedForwarder[B, T]) Write(data T) {
 	l.dataCh <- data
 }
 
-func (l *BufferedForwarded[B, T]) Close() {
+func (l *BufferedForwarder[B, T]) Close() {
 	close(l.doneCh)
 	close(l.dataCh)
 	l.workersWg.Wait()

@@ -22,7 +22,7 @@ type (
 	}
 )
 
-func NewBufferedForwarder(config Config) alslgr.BufferedForwarded[[][]byte, []byte] {
+func NewBufferedForwarder(config Config) alslgr.BufferedForwarder[[][]byte, []byte] {
 	dataBatchProducer := NewDataBatchProducer(config.BatchMaxLen)
 
 	dataForwarder := NewDataForwarder(config.Filename, config.LastResortWriter, config.MaxForwarderBufferLen)
