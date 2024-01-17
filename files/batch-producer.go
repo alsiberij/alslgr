@@ -9,16 +9,16 @@ type (
 )
 
 var (
-	_ alslgr.BatchProducer[[][]byte, []byte] = (*BatchProducer)(nil)
+	_ alslgr.DataBatchProducer[[][]byte, []byte] = (*BatchProducer)(nil)
 )
 
-func NewBatchProducer(batchMaxLen int) BatchProducer {
+func NewDataBatchProducer(batchMaxLen int) BatchProducer {
 	return BatchProducer{
 		batchMaxLen: batchMaxLen,
 	}
 }
 
-func (b *BatchProducer) NewBatch() alslgr.Batch[[][]byte, []byte] {
+func (b *BatchProducer) NewDataBatch() alslgr.DataBatch[[][]byte, []byte] {
 	return &Batch{
 		aggregatedData: make([][]byte, 0, b.batchMaxLen),
 	}

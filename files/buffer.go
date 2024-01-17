@@ -12,8 +12,7 @@ type (
 	Config struct {
 		BatchMaxLen           int
 		Filename              string
-		WriterErrorsHandler   WriterErrorsHandler
-		LastResortWriter      io.WriteCloser
+		LastResortWriter      io.Writer
 		MaxForwarderBufferLen int
 		TimedForwardInterval  time.Duration
 		SighupCh              <-chan os.Signal
@@ -23,21 +22,26 @@ type (
 	}
 )
 
-func NewBuffer(config Config) (alslgr.Buffer[[][]byte, []byte], error) {
-	batchProducer := NewBatchProducer(config.BatchMaxLen)
-	dataForwarder, err := NewForwarder(config.Filename, config.WriterErrorsHandler, config.LastResortWriter, config.MaxForwarderBufferLen)
-	if err != nil {
-		return alslgr.Buffer[[][]byte, []byte]{}, err
-	}
+func NewBuffer(config Config) (alslgr.BufferedForwarded[[][]byte, []byte], error) {
+	dataBatchProducer := NewDataBatchProducer(config.BatchMaxLen)
 
-	manualForwardSignalCh := make(chan struct{}, 1)
-	go timedForward(config.TimedForwardingDoneCh, config.TimedForwardInterval, manualForwardSignalCh)
+	dataForwarder := NewDataForwarder(config.Filename, config.LastResortWriter, config.MaxForwarderBufferLen)
+
+	manualForwardingSignalCh := make(chan struct{}, 1)
+	go timedForward(config.TimedForwardingDoneCh, config.TimedForwardInterval, manualForwardingSignalCh)
 
 	reopenForwarderCh := make(chan struct{}, 1)
 	go reopenForwarderOnSighup(config.ReopenForwarderDoneCh, config.SighupCh, reopenForwarderCh)
 
-	return alslgr.NewBuffer[[][]byte, []byte](&batchProducer, &dataForwarder, manualForwardSignalCh, reopenForwarderCh,
-		config.ChannelsBuffer, 1, 1), nil
+	return alslgr.NewBuffer[[][]byte, []byte](alslgr.Config[[][]byte, []byte]{
+		DataBatchProducer:        &dataBatchProducer,
+		DataForwarder:            &dataForwarder,
+		ManualForwardingSignalCh: manualForwardingSignalCh,
+		ReopenForwarderCh:        reopenForwarderCh,
+		ChannelsBuffer:           config.ChannelsBuffer,
+		BatchingConcurrency:      1,
+		ForwardingConcurrency:    1,
+	}), nil
 }
 
 func timedForward(doneCh <-chan struct{}, interval time.Duration, signalCh chan<- struct{}) {

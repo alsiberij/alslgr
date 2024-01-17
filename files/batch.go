@@ -11,7 +11,7 @@ type (
 )
 
 var (
-	_ alslgr.Batch[[][]byte, []byte] = (*Batch)(nil)
+	_ alslgr.DataBatch[[][]byte, []byte] = (*Batch)(nil)
 )
 
 func (b *Batch) ReadyToSend() bool {

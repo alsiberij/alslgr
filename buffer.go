@@ -5,42 +5,49 @@ import (
 )
 
 type (
-	Buffer[B, T any] struct {
+	BufferedForwarded[B, T any] struct {
 		wg *sync.WaitGroup
 
-		batchProducer BatchProducer[B, T]
-		dataForwarder DataForwarder[B, T]
+		dataBatchProducer DataBatchProducer[B, T]
+		dataForwarder     DataForwarder[B, T]
 
-		dataCh  chan T
-		batchCh chan Batch[B, T]
+		dataCh      chan T
+		dataBatchCh chan DataBatch[B, T]
 
-		doneCh            chan struct{}
-		manualForwardCh   chan struct{}
-		reopenForwarderCh chan struct{}
+		doneCh                   chan struct{}
+		manualForwardingSignalCh chan struct{}
+		reopenForwarderSignalCh  chan struct{}
+	}
+
+	Config[B, T any] struct {
+		DataBatchProducer        DataBatchProducer[B, T]
+		DataForwarder            DataForwarder[B, T]
+		ManualForwardingSignalCh chan struct{}
+		ReopenForwarderCh        chan struct{}
+		ChannelsBuffer           int
+		BatchingConcurrency      int
+		ForwardingConcurrency    int
 	}
 )
 
-func NewBuffer[B, T any](batchProducer BatchProducer[B, T], dataForwarder DataForwarder[B, T],
-	manualForwardSignalCh, reopenForwarderCh chan struct{}, channelsBuffer,
-	batchingConcurrency, forwardingConcurrency int) Buffer[B, T] {
-
-	b := Buffer[B, T]{
-		wg:                &sync.WaitGroup{},
-		batchProducer:     batchProducer,
-		dataForwarder:     dataForwarder,
-		dataCh:            make(chan T, channelsBuffer),
-		batchCh:           make(chan Batch[B, T], channelsBuffer),
-		doneCh:            make(chan struct{}),
-		manualForwardCh:   manualForwardSignalCh,
-		reopenForwarderCh: reopenForwarderCh,
+func NewBuffer[B, T any](config Config[B, T]) BufferedForwarded[B, T] {
+	b := BufferedForwarded[B, T]{
+		wg:                       &sync.WaitGroup{},
+		dataBatchProducer:        config.DataBatchProducer,
+		dataForwarder:            config.DataForwarder,
+		dataCh:                   make(chan T, config.ChannelsBuffer),
+		dataBatchCh:              make(chan DataBatch[B, T], config.ChannelsBuffer),
+		doneCh:                   make(chan struct{}),
+		manualForwardingSignalCh: config.ManualForwardingSignalCh,
+		reopenForwarderSignalCh:  config.ReopenForwarderCh,
 	}
 
-	for i := 0; i < forwardingConcurrency; i++ {
+	for i := 0; i < config.BatchingConcurrency; i++ {
 		b.wg.Add(1)
 		go b.worker()
 	}
 
-	for i := 0; i < batchingConcurrency; i++ {
+	for i := 0; i < config.ForwardingConcurrency; i++ {
 		b.wg.Add(1)
 		go b.workerForwarder()
 	}
@@ -48,11 +55,11 @@ func NewBuffer[B, T any](batchProducer BatchProducer[B, T], dataForwarder DataFo
 	return b
 }
 
-func (l *Buffer[B, T]) worker() {
+func (l *BufferedForwarded[B, T]) worker() {
 	defer l.wg.Done()
-	defer close(l.batchCh)
+	defer close(l.dataBatchCh)
 
-	batch := l.batchProducer.NewBatch()
+	batch := l.dataBatchProducer.NewDataBatch()
 
 	for {
 		select {
@@ -62,47 +69,47 @@ func (l *Buffer[B, T]) worker() {
 			}
 			batch.Append(data)
 			if batch.ReadyToSend() {
-				l.batchCh <- batch
-				batch = l.batchProducer.NewBatch()
+				l.dataBatchCh <- batch
+				batch = l.dataBatchProducer.NewDataBatch()
 			}
 		case <-l.doneCh:
-			l.batchCh <- batch
+			l.dataBatchCh <- batch
 			return
-		case <-l.manualForwardCh:
-			l.batchCh <- batch
-			batch = l.batchProducer.NewBatch()
+		case <-l.manualForwardingSignalCh:
+			l.dataBatchCh <- batch
+			batch = l.dataBatchProducer.NewDataBatch()
 		}
 	}
 }
 
-func (l *Buffer[B, T]) workerForwarder() {
+func (l *BufferedForwarded[B, T]) workerForwarder() {
 	defer l.wg.Done()
 	defer l.handleRemainingData()
 
 	for {
 		select {
-		case batch, ok := <-l.batchCh:
+		case batch, ok := <-l.dataBatchCh:
 			if !ok {
 				return
 			}
-			l.dataForwarder.ForwardBatch(batch.Extract())
-		case <-l.reopenForwarderCh:
+			l.dataForwarder.ForwardDataBatch(batch.Extract())
+		case <-l.reopenForwarderSignalCh:
 			l.dataForwarder.Reopen()
 		}
 	}
 }
 
-func (l *Buffer[B, T]) handleRemainingData() {
+func (l *BufferedForwarded[B, T]) handleRemainingData() {
 	for data := range l.dataCh {
-		l.dataForwarder.Forward(data)
+		l.dataForwarder.ForwardData(data)
 	}
 }
 
-func (l *Buffer[B, T]) Write(data T) {
+func (l *BufferedForwarded[B, T]) Write(data T) {
 	l.dataCh <- data
 }
 
-func (l *Buffer[B, T]) Close() {
+func (l *BufferedForwarded[B, T]) Close() {
 	close(l.doneCh)
 	close(l.dataCh)
 	l.wg.Wait()

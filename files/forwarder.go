@@ -9,51 +9,49 @@ import (
 )
 
 type (
-	Forwarder struct {
+	DataForwarder struct {
 		filename string
-
-		writerErrorsHandler WriterErrorsHandler
 
 		mu               *sync.Mutex
 		writerCloser     io.WriteCloser
-		lastResortWriter io.WriteCloser
+		lastResortWriter io.Writer
 
 		maxBufferLen int
 	}
 )
 
 var (
-	_ alslgr.DataForwarder[[][]byte, []byte] = (*Forwarder)(nil)
+	_ alslgr.DataForwarder[[][]byte, []byte] = (*DataForwarder)(nil)
 )
 
-func NewForwarder(filename string, writerErrorsHandler WriterErrorsHandler,
-	lastResortWriter io.WriteCloser, maxBufferLen int) (Forwarder, error) {
+func NewDataForwarder(filename string, lastResortWriter io.Writer, maxBufferLen int) DataForwarder {
+	var w io.WriteCloser
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return Forwarder{}, err
+	if err == nil {
+		w = file
 	}
 
-	f := Forwarder{
-		writerErrorsHandler: writerErrorsHandler,
-		mu:                  &sync.Mutex{},
-		writerCloser:        file,
-		lastResortWriter:    lastResortWriter,
-		maxBufferLen:        maxBufferLen,
+	f := DataForwarder{
+		mu:               &sync.Mutex{},
+		writerCloser:     w,
+		lastResortWriter: lastResortWriter,
+		maxBufferLen:     maxBufferLen,
 	}
 
-	return f, err
+	return f
 }
 
-func (f *Forwarder) Reopen() {
+func (f *DataForwarder) Reopen() {
 	f.mu.Lock()
 
-	_ = f.writerCloser.Close()
+	if f.writerCloser != nil {
+		_ = f.writerCloser.Close()
+	}
 
 	file, err := os.OpenFile(f.filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		f.writerErrorsHandler.HandleError(f.lastResortWriter, nil, err)
-		f.writerCloser = f.lastResortWriter
+		f.writerCloser = nil
 	} else {
 		f.writerCloser = file
 	}
@@ -61,7 +59,7 @@ func (f *Forwarder) Reopen() {
 	f.mu.Unlock()
 }
 
-func (f *Forwarder) ForwardBatch(batch [][]byte) {
+func (f *DataForwarder) ForwardDataBatch(batch [][]byte) {
 	var size int
 	for _, data := range batch {
 		size += len(data)
@@ -73,7 +71,7 @@ func (f *Forwarder) ForwardBatch(batch [][]byte) {
 
 	if size > f.maxBufferLen {
 		for _, b := range batch {
-			f.Forward(b)
+			f.ForwardData(b)
 		}
 		return
 	}
@@ -84,21 +82,33 @@ func (f *Forwarder) ForwardBatch(batch [][]byte) {
 		_, _ = buf.Write(data)
 	}
 
-	f.Forward(buf.Bytes())
+	f.ForwardData(buf.Bytes())
 }
 
-func (f *Forwarder) Forward(data []byte) {
+func (f *DataForwarder) ForwardData(data []byte) {
 	f.mu.Lock()
-	_, err := f.writerCloser.Write(data)
-	f.mu.Unlock()
 
-	if err != nil {
-		f.writerErrorsHandler.HandleError(f.lastResortWriter, data, err)
+	var writeSucceed bool
+	if f.writerCloser != nil {
+		n, err := f.writerCloser.Write(data)
+		if err == nil && n == len(data) {
+			writeSucceed = true
+		} else {
+			data = data[n:]
+		}
 	}
+
+	if !writeSucceed {
+		_, _ = f.lastResortWriter.Write(data)
+	}
+
+	f.mu.Unlock()
 }
 
-func (f *Forwarder) Close() {
+func (f *DataForwarder) Close() {
 	f.mu.Lock()
-	_ = f.writerCloser.Close()
+	if f.writerCloser != nil {
+		_ = f.writerCloser.Close()
+	}
 	f.mu.Unlock()
 }
