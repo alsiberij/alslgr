@@ -54,7 +54,7 @@ func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarder[B, T]
 		go b.worker(manualForwardsCh)
 	}
 
-	mergeManualForwardChannels(config.ManualForwardingSignalCh, manualForwardsChs...)
+	go mergeManualForwardChannels(config.ManualForwardingSignalCh, manualForwardsChs...)
 
 	for i := 0; i < config.ForwardingConcurrency; i++ {
 		b.workersForwardersWg.Add(1)
