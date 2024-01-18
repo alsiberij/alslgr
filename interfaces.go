@@ -14,6 +14,7 @@ type (
 		ReadyToSend() bool
 		Append(data T)
 		Extract() B
+		Reset()
 	}
 
 	DataBatchProducer[B, T any] interface {

@@ -14,7 +14,7 @@ type (
 		dataForwarder     DataForwarder[B, T]
 
 		dataCh      chan T
-		dataBatchCh chan DataBatch[B, T]
+		dataBatchCh chan B
 
 		doneCh                  chan struct{}
 		reopenForwarderSignalCh <-chan struct{}
@@ -38,7 +38,7 @@ func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarder[B, T]
 		dataBatchProducer:       config.DataBatchProducer,
 		dataForwarder:           config.DataForwarder,
 		dataCh:                  make(chan T, config.ChannelsBuffer),
-		dataBatchCh:             make(chan DataBatch[B, T], config.ChannelsBuffer),
+		dataBatchCh:             make(chan B, config.ChannelsBuffer),
 		doneCh:                  make(chan struct{}),
 		reopenForwarderSignalCh: config.ReopenForwarderCh,
 	}
@@ -81,20 +81,20 @@ func (l *BufferedForwarder[B, T]) worker(manualForwardCh <-chan struct{}) {
 		select {
 		case data, ok := <-l.dataCh:
 			if !ok {
-				l.dataBatchCh <- batch
+				l.dataBatchCh <- batch.Extract()
 				return
 			}
 			batch.Append(data)
 			if batch.ReadyToSend() {
-				l.dataBatchCh <- batch
-				batch = l.dataBatchProducer.NewDataBatch()
+				l.dataBatchCh <- batch.Extract()
+				batch.Reset()
 			}
 		case <-l.doneCh:
-			l.dataBatchCh <- batch
+			l.dataBatchCh <- batch.Extract()
 			return
 		case <-manualForwardCh:
-			l.dataBatchCh <- batch
-			batch = l.dataBatchProducer.NewDataBatch()
+			l.dataBatchCh <- batch.Extract()
+			batch.Reset()
 		}
 	}
 }
@@ -109,7 +109,7 @@ func (l *BufferedForwarder[B, T]) workerForwarder() {
 			if !ok {
 				return
 			}
-			l.dataForwarder.ForwardDataBatch(batch.Extract())
+			l.dataForwarder.ForwardDataBatch(batch)
 		case <-l.reopenForwarderSignalCh:
 			l.dataForwarder.Reopen()
 		}
