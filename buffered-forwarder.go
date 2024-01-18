@@ -87,14 +87,12 @@ func (l *BufferedForwarder[B, T]) worker(manualForwardCh <-chan struct{}) {
 			batch.Append(data)
 			if batch.ReadyToSend() {
 				l.dataBatchCh <- batch.Extract()
-				batch.Reset()
 			}
 		case <-l.doneCh:
 			l.dataBatchCh <- batch.Extract()
 			return
 		case <-manualForwardCh:
 			l.dataBatchCh <- batch.Extract()
-			batch.Reset()
 		}
 	}
 }

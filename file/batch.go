@@ -25,9 +25,6 @@ func (b *DataBatch) Append(data []byte) {
 func (b *DataBatch) Extract() [][]byte {
 	cp := make([][]byte, len(b.aggregatedData))
 	copy(cp, b.aggregatedData)
-	return cp
-}
-
-func (b *DataBatch) Reset() {
 	b.aggregatedData = b.aggregatedData[:0]
+	return cp
 }
