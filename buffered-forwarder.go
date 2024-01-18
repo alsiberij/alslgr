@@ -16,9 +16,8 @@ type (
 		dataCh      chan T
 		dataBatchCh chan DataBatch[B, T]
 
-		doneCh                   chan struct{}
-		manualForwardingSignalCh <-chan struct{}
-		reopenForwarderSignalCh  <-chan struct{}
+		doneCh                  chan struct{}
+		reopenForwarderSignalCh <-chan struct{}
 	}
 
 	Config[B, T any] struct {
@@ -34,21 +33,28 @@ type (
 
 func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarder[B, T] {
 	b := BufferedForwarder[B, T]{
-		workersWg:                &sync.WaitGroup{},
-		workersForwardersWg:      &sync.WaitGroup{},
-		dataBatchProducer:        config.DataBatchProducer,
-		dataForwarder:            config.DataForwarder,
-		dataCh:                   make(chan T, config.ChannelsBuffer),
-		dataBatchCh:              make(chan DataBatch[B, T], config.ChannelsBuffer),
-		doneCh:                   make(chan struct{}),
-		manualForwardingSignalCh: config.ManualForwardingSignalCh,
-		reopenForwarderSignalCh:  config.ReopenForwarderCh,
+		workersWg:               &sync.WaitGroup{},
+		workersForwardersWg:     &sync.WaitGroup{},
+		dataBatchProducer:       config.DataBatchProducer,
+		dataForwarder:           config.DataForwarder,
+		dataCh:                  make(chan T, config.ChannelsBuffer),
+		dataBatchCh:             make(chan DataBatch[B, T], config.ChannelsBuffer),
+		doneCh:                  make(chan struct{}),
+		reopenForwarderSignalCh: config.ReopenForwarderCh,
 	}
+
+	manualForwardsChs := make([]chan struct{}, 0, config.BatchingConcurrency)
 
 	for i := 0; i < config.BatchingConcurrency; i++ {
 		b.workersWg.Add(1)
-		go b.worker()
+
+		manualForwardsCh := make(chan struct{}, 1)
+
+		manualForwardsChs = append(manualForwardsChs, manualForwardsCh)
+		go b.worker(manualForwardsCh)
 	}
+
+	mergeManualForwardChannels(config.ManualForwardingSignalCh, manualForwardsChs...)
 
 	for i := 0; i < config.ForwardingConcurrency; i++ {
 		b.workersForwardersWg.Add(1)
@@ -58,7 +64,15 @@ func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarder[B, T]
 	return b
 }
 
-func (l *BufferedForwarder[B, T]) worker() {
+func mergeManualForwardChannels(mainCh <-chan struct{}, chs ...chan struct{}) {
+	for range mainCh {
+		for _, ch := range chs {
+			ch <- struct{}{}
+		}
+	}
+}
+
+func (l *BufferedForwarder[B, T]) worker(manualForwardCh <-chan struct{}) {
 	defer l.workersWg.Done()
 
 	batch := l.dataBatchProducer.NewDataBatch()
@@ -78,7 +92,7 @@ func (l *BufferedForwarder[B, T]) worker() {
 		case <-l.doneCh:
 			l.dataBatchCh <- batch
 			return
-		case <-l.manualForwardingSignalCh:
+		case <-manualForwardCh:
 			l.dataBatchCh <- batch
 			batch = l.dataBatchProducer.NewDataBatch()
 		}
