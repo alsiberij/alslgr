@@ -10,38 +10,42 @@ import (
 
 type (
 	Config struct {
-		BatchMaxLen           int
-		Filename              string
-		LastResortWriter      io.Writer
-		MaxForwarderBufferLen int
-		TimedForwardInterval  time.Duration
-		SighupCh              <-chan os.Signal
-		SigHupListeningDoneCh <-chan struct{}
-		TimedForwardingDoneCh <-chan struct{}
-		ChannelsBuffer        int
+		BatchMaxLen             int
+		MaxForwarderBufferLen   int
+		Filename                string
+		LastResortWriter        io.Writer
+		ChannelsBuffer          int
+		TimedForwardingInterval time.Duration
+		TimedForwardingDoneCh   <-chan struct{}
+		SighupCh                <-chan os.Signal
+		SigHupListeningDoneCh   <-chan struct{}
 	}
 )
 
 func NewBufferedForwarder(config Config) alslgr.BufferedForwarder[[][]byte, []byte] {
-	dataBatchProducer := NewDataBatchProducer(config.BatchMaxLen)
-
-	dataForwarder := NewDataForwarder(config.Filename, config.LastResortWriter, config.MaxForwarderBufferLen)
+	bp := alslgr.SliceBatchProducer[[]byte](config.BatchMaxLen)
+	fwd := newForwarder(config.Filename, config.LastResortWriter, config.MaxForwarderBufferLen)
 
 	reopenForwarderCh := make(chan struct{}, 1)
-	go reopenForwarderOnSighup(config.SigHupListeningDoneCh, config.SighupCh, reopenForwarderCh)
+	go reopenFileOnSighup(config.SigHupListeningDoneCh, config.SighupCh, reopenForwarderCh)
+
+	var manualForwardingCh <-chan struct{}
+	if config.TimedForwardingInterval > 0 {
+		manualForwardingCh = alslgr.NewTicker(config.TimedForwardingInterval, config.TimedForwardingDoneCh)
+	}
 
 	return alslgr.NewBufferedForwarder[[][]byte, []byte](alslgr.Config[[][]byte, []byte]{
-		DataBatchProducer:        &dataBatchProducer,
-		DataForwarder:            &dataForwarder,
-		ManualForwardingSignalCh: alslgr.TimedForwarding(config.TimedForwardInterval, config.TimedForwardingDoneCh),
-		ReopenForwarderCh:        reopenForwarderCh,
-		ChannelsBuffer:           config.ChannelsBuffer,
-		BatchingConcurrency:      1,
-		ForwardingConcurrency:    1,
+		BatchProducer:         &bp,
+		Forwarder:             &fwd,
+		ManualForwardingCh:    manualForwardingCh,
+		ResetForwarderCh:      reopenForwarderCh,
+		ChannelsBuffer:        config.ChannelsBuffer,
+		BatchingConcurrency:   1,
+		ForwardingConcurrency: 1,
 	})
 }
 
-func reopenForwarderOnSighup(doneCh <-chan struct{}, sigHupCh <-chan os.Signal, reopenForwarderCh chan<- struct{}) {
+func reopenFileOnSighup(doneCh <-chan struct{}, sigHupCh <-chan os.Signal, reopenForwarderCh chan<- struct{}) {
 	for {
 		select {
 		case <-doneCh:

@@ -7,117 +7,59 @@ import (
 
 type (
 	BufferedForwarder[B, T any] struct {
-		workersWg           *sync.WaitGroup
-		workersForwardersWg *sync.WaitGroup
+		workersBatchingWg   *sync.WaitGroup
+		workersForwardingWg *sync.WaitGroup
 
-		dataBatchProducer DataBatchProducer[B, T]
-		dataForwarder     DataForwarder[B, T]
+		batchProducer BatchProducer[B, T]
+		forwarder     Forwarder[B, T]
 
-		dataCh      chan T
-		dataBatchCh chan B
+		dataCh  chan T
+		batchCh chan B
 
-		doneCh                  chan struct{}
-		reopenForwarderSignalCh <-chan struct{}
+		doneCh           chan struct{}
+		resetForwarderCh <-chan struct{}
 	}
 
 	Config[B, T any] struct {
-		DataBatchProducer        DataBatchProducer[B, T]
-		DataForwarder            DataForwarder[B, T]
-		ManualForwardingSignalCh <-chan struct{}
-		ReopenForwarderCh        <-chan struct{}
-		ChannelsBuffer           int
-		BatchingConcurrency      int
-		ForwardingConcurrency    int
+		BatchProducer         BatchProducer[B, T]
+		Forwarder             Forwarder[B, T]
+		ManualForwardingCh    <-chan struct{}
+		ResetForwarderCh      <-chan struct{}
+		ChannelsBuffer        int
+		BatchingConcurrency   int
+		ForwardingConcurrency int
 	}
 )
 
 func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarder[B, T] {
 	b := BufferedForwarder[B, T]{
-		workersWg:               &sync.WaitGroup{},
-		workersForwardersWg:     &sync.WaitGroup{},
-		dataBatchProducer:       config.DataBatchProducer,
-		dataForwarder:           config.DataForwarder,
-		dataCh:                  make(chan T, config.ChannelsBuffer),
-		dataBatchCh:             make(chan B, config.ChannelsBuffer),
-		doneCh:                  make(chan struct{}),
-		reopenForwarderSignalCh: config.ReopenForwarderCh,
+		workersBatchingWg:   &sync.WaitGroup{},
+		workersForwardingWg: &sync.WaitGroup{},
+		batchProducer:       config.BatchProducer,
+		forwarder:           config.Forwarder,
+		dataCh:              make(chan T, config.ChannelsBuffer),
+		batchCh:             make(chan B, config.ChannelsBuffer),
+		doneCh:              make(chan struct{}),
+		resetForwarderCh:    config.ResetForwarderCh,
 	}
 
 	manualForwardsChs := make([]chan struct{}, 0, config.BatchingConcurrency)
 
+	b.workersBatchingWg.Add(config.BatchingConcurrency)
 	for i := 0; i < config.BatchingConcurrency; i++ {
-		b.workersWg.Add(1)
-
 		manualForwardsCh := make(chan struct{}, 1)
-
 		manualForwardsChs = append(manualForwardsChs, manualForwardsCh)
-		go b.worker(manualForwardsCh)
+		go b.workerBatching(manualForwardsCh)
 	}
 
-	go mergeManualForwardChannels(config.ManualForwardingSignalCh, manualForwardsChs...)
+	go mergeManualForwardChannels(config.ManualForwardingCh, manualForwardsChs...)
 
+	b.workersForwardingWg.Add(config.ForwardingConcurrency)
 	for i := 0; i < config.ForwardingConcurrency; i++ {
-		b.workersForwardersWg.Add(1)
-		go b.workerForwarder()
+		go b.workerForwarding()
 	}
 
 	return b
-}
-
-func mergeManualForwardChannels(mainCh <-chan struct{}, chs ...chan struct{}) {
-	for range mainCh {
-		for _, ch := range chs {
-			ch <- struct{}{}
-		}
-	}
-}
-
-func (l *BufferedForwarder[B, T]) worker(manualForwardCh <-chan struct{}) {
-	defer l.workersWg.Done()
-
-	batch := l.dataBatchProducer.NewDataBatch()
-
-	for {
-		select {
-		case data, ok := <-l.dataCh:
-			if !ok {
-				l.dataBatchCh <- batch.Extract()
-				return
-			}
-			batch.Append(data)
-			if batch.ReadyToSend() {
-				l.dataBatchCh <- batch.Extract()
-			}
-		case <-l.doneCh:
-			l.dataBatchCh <- batch.Extract()
-			return
-		case <-manualForwardCh:
-			l.dataBatchCh <- batch.Extract()
-		}
-	}
-}
-
-func (l *BufferedForwarder[B, T]) workerForwarder() {
-	defer l.workersForwardersWg.Done()
-	defer l.handleRemainingData()
-
-	for {
-		select {
-		case batch, ok := <-l.dataBatchCh:
-			if !ok {
-				return
-			}
-			l.dataForwarder.ForwardDataBatch(batch)
-		case <-l.reopenForwarderSignalCh:
-			l.dataForwarder.Reopen()
-		}
-	}
-}
-
-func (l *BufferedForwarder[B, T]) handleRemainingData() {
-	for data := range l.dataCh {
-		l.dataForwarder.ForwardData(data)
-	}
 }
 
 func (l *BufferedForwarder[B, T]) Write(data T) {
@@ -136,10 +78,58 @@ func (l *BufferedForwarder[B, T]) WriteCtx(ctx context.Context, data T) error {
 func (l *BufferedForwarder[B, T]) Close() {
 	close(l.doneCh)
 	close(l.dataCh)
-	l.workersWg.Wait()
+	l.workersBatchingWg.Wait()
 
-	close(l.dataBatchCh)
-	l.workersForwardersWg.Wait()
+	close(l.batchCh)
+	l.workersForwardingWg.Wait()
 
-	l.dataForwarder.Close()
+	l.forwarder.Close()
+}
+
+func (l *BufferedForwarder[B, T]) workerBatching(manualForwardCh <-chan struct{}) {
+	defer l.workersBatchingWg.Done()
+
+	batch := l.batchProducer.NewBatch()
+
+	for {
+		select {
+		case data, ok := <-l.dataCh:
+			if !ok {
+				l.batchCh <- batch.Extract()
+				return
+			}
+			batch.Append(data)
+			if batch.IsFull() {
+				l.batchCh <- batch.Extract()
+			}
+		case <-l.doneCh:
+			l.batchCh <- batch.Extract()
+			return
+		case <-manualForwardCh:
+			l.batchCh <- batch.Extract()
+		}
+	}
+}
+
+func (l *BufferedForwarder[B, T]) workerForwarding() {
+	defer l.workersForwardingWg.Done()
+	defer l.handleRemainingData()
+
+	for {
+		select {
+		case batch, ok := <-l.batchCh:
+			if !ok {
+				return
+			}
+			l.forwarder.ForwardBatch(batch)
+		case <-l.resetForwarderCh:
+			l.forwarder.Reset()
+		}
+	}
+}
+
+func (l *BufferedForwarder[B, T]) handleRemainingData() {
+	for data := range l.dataCh {
+		l.forwarder.Forward(data)
+	}
 }

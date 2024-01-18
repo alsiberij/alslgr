@@ -1,22 +1,20 @@
 package alslgr
 
 type (
-	DataForwarder[B, T any] interface {
-		Reopen()
-
-		ForwardDataBatch(batch B)
-		ForwardData(data T)
-
+	Forwarder[B, T any] interface {
+		Reset()
+		ForwardBatch(batch B)
+		Forward(data T)
 		Close()
 	}
 
-	DataBatch[B, T any] interface {
-		ReadyToSend() bool
+	Batch[B, T any] interface {
+		IsFull() bool
 		Append(data T)
 		Extract() B
 	}
 
-	DataBatchProducer[B, T any] interface {
-		NewDataBatch() DataBatch[B, T]
+	BatchProducer[B, T any] interface {
+		NewBatch() Batch[B, T]
 	}
 )

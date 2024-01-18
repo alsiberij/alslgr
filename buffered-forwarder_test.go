@@ -4,6 +4,6 @@ import (
 	"testing"
 )
 
-func TestBufferedForwarded(t *testing.T) {
+func TestBufferedForwarder(t *testing.T) {
 	// TRUST ME IT'S OK
 }

@@ -9,7 +9,7 @@ import (
 )
 
 type (
-	DataForwarder struct {
+	forwarder struct {
 		filename string
 
 		mu               *sync.Mutex
@@ -21,10 +21,10 @@ type (
 )
 
 var (
-	_ alslgr.DataForwarder[[][]byte, []byte] = (*DataForwarder)(nil)
+	_ alslgr.Forwarder[[][]byte, []byte] = (*forwarder)(nil)
 )
 
-func NewDataForwarder(filename string, lastResortWriter io.Writer, maxBufferLen int) DataForwarder {
+func newForwarder(filename string, lastResortWriter io.Writer, maxBufferLen int) forwarder {
 	var w io.WriteCloser
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -32,7 +32,7 @@ func NewDataForwarder(filename string, lastResortWriter io.Writer, maxBufferLen 
 		w = file
 	}
 
-	f := DataForwarder{
+	f := forwarder{
 		mu:               &sync.Mutex{},
 		writerCloser:     w,
 		lastResortWriter: lastResortWriter,
@@ -42,7 +42,7 @@ func NewDataForwarder(filename string, lastResortWriter io.Writer, maxBufferLen 
 	return f
 }
 
-func (f *DataForwarder) Reopen() {
+func (f *forwarder) Reset() {
 	f.mu.Lock()
 
 	if f.writerCloser != nil {
@@ -59,7 +59,7 @@ func (f *DataForwarder) Reopen() {
 	f.mu.Unlock()
 }
 
-func (f *DataForwarder) ForwardDataBatch(batch [][]byte) {
+func (f *forwarder) ForwardBatch(batch [][]byte) {
 	var size int
 	for _, data := range batch {
 		size += len(data)
@@ -71,7 +71,7 @@ func (f *DataForwarder) ForwardDataBatch(batch [][]byte) {
 
 	if size > f.maxBufferLen {
 		for _, b := range batch {
-			f.ForwardData(b)
+			f.Forward(b)
 		}
 		return
 	}
@@ -82,10 +82,10 @@ func (f *DataForwarder) ForwardDataBatch(batch [][]byte) {
 		_, _ = buf.Write(data)
 	}
 
-	f.ForwardData(buf.Bytes())
+	f.Forward(buf.Bytes())
 }
 
-func (f *DataForwarder) ForwardData(data []byte) {
+func (f *forwarder) Forward(data []byte) {
 	f.mu.Lock()
 
 	var writeSucceed bool
@@ -105,7 +105,7 @@ func (f *DataForwarder) ForwardData(data []byte) {
 	f.mu.Unlock()
 }
 
-func (f *DataForwarder) Close() {
+func (f *forwarder) Close() {
 	f.mu.Lock()
 	if f.writerCloser != nil {
 		_ = f.writerCloser.Close()
