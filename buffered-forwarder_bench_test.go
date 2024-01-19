@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// THIS BENCH RUNS ONLY ONCE
+// FOR CORRECT RESULTS ADD -benchtime=1x FLAG
 
 const (
 	// Indicates how much sending batch of data is more efficient than sending that amount of data without batching
@@ -65,11 +65,9 @@ func BenchmarkBufferedForwarder(b *testing.B) {
 		d:  writeDelay,
 		mu: sync.Mutex{},
 	}
-	mfch := make(chan struct{}, 1)
 	bfwd := NewBufferedForwarder(Config[[][]byte, []byte]{
 		BatchProducer:         &sbp,
 		Forwarder:             &fwd,
-		ManualForwardingCh:    mfch,
 		ChannelsBuffer:        channelBuffer,
 		BatchingConcurrency:   runtime.NumCPU(),
 		ForwardingConcurrency: runtime.NumCPU(),
