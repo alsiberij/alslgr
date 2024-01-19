@@ -1,9 +1,9 @@
 package alslgr
 
-func mergeManualForwardChannels(mainCh <-chan struct{}, chs ...chan struct{}) {
+func mergeChannels[T any](mainCh <-chan T, chs ...chan T) {
 	for range mainCh {
 		for _, ch := range chs {
-			ch <- struct{}{}
+			ch <- *(new(T))
 		}
 	}
 }

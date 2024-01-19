@@ -52,7 +52,7 @@ func NewBufferedForwarder[B, T any](config Config[B, T]) BufferedForwarder[B, T]
 		go b.workerBatching(manualForwardsCh)
 	}
 
-	go mergeManualForwardChannels(config.ManualForwardingCh, manualForwardsChs...)
+	go mergeChannels[struct{}](config.ManualForwardingCh, manualForwardsChs...)
 
 	b.workersForwardingWg.Add(config.ForwardingConcurrency)
 	for i := 0; i < config.ForwardingConcurrency; i++ {
