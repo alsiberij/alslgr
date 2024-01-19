@@ -6,21 +6,22 @@ import (
 	"testing"
 )
 
-// FOR CORRECT RESULTS ADD -benchtime=1x FLAG
+// IT IS RECOMMENDED TO ADD -benchtime=10s FLAG
 
 const (
 	// Amount of concurrent writers that will try to write data in forwarder
-	benchGoroutines = 1_000
+	benchGoroutines = 1000
 
 	// Constant is used for creating large data entries
-	benchStringsRepeat = 20
+	benchStringsRepeat = 10
+	benchString        = "HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n"
 
 	// Amount of data that will be aggregated into a batch
-	benchBatchSize = 200
+	benchBatchSize = 100
 
 	// Maximum length of underlying buffer that will be used before writing data batch into a file
 	// Otherwise all entries will be written consequentially
-	benchMaxBufferLen = benchBatchSize * 1_000
+	benchMaxBufferLen = len(benchString) * benchStringsRepeat * benchBatchSize
 
 	// Size of buffers of internal channels
 	benchChannelBuffer = 32
@@ -41,14 +42,17 @@ func BenchmarkFileBufferedForwarder(b *testing.B) {
 
 	b.ResetTimer()
 
-	wg.Add(benchGoroutines)
-	for j := 0; j < benchGoroutines; j++ {
-		go func() {
-			bfwd.Write([]byte(strings.Repeat("HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n", benchStringsRepeat)))
-			wg.Done()
-		}()
+	for i := 0; i < b.N; i++ {
+		wg.Add(benchGoroutines)
+		for j := 0; j < benchGoroutines; j++ {
+			go func() {
+				bfwd.Write([]byte(strings.Repeat(benchString, benchStringsRepeat)))
+				wg.Done()
+			}()
+		}
+		wg.Wait()
 	}
-	wg.Wait()
+
 	bfwd.Close()
 }
 
@@ -63,12 +67,14 @@ func BenchmarkFileForwarder(b *testing.B) {
 
 	b.ResetTimer()
 
-	wg.Add(benchGoroutines)
-	for j := 0; j < benchGoroutines; j++ {
-		go func() {
-			fwd.Forward([]byte(strings.Repeat("HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n", benchStringsRepeat)))
-			wg.Done()
-		}()
+	for i := 0; i < b.N; i++ {
+		wg.Add(benchGoroutines)
+		for j := 0; j < benchGoroutines; j++ {
+			go func() {
+				fwd.Forward([]byte(strings.Repeat(benchString, benchStringsRepeat)))
+				wg.Done()
+			}()
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 }

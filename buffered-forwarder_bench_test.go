@@ -7,16 +7,14 @@ import (
 	"time"
 )
 
-// FOR CORRECT RESULTS ADD -benchtime=1x FLAG
-
 const (
 	// Indicates how much sending batch of data is more efficient than sending that amount of data without batching
-	// Value of 3 means that sending batch of 3 values has the same speed as sending single value
+	// Value of 5 means that sending batch of 5 values has the same speed as sending single value
 	// More effective batch sending means more effectivity for forwarding at all
-	batchEfficiencyCoefficient = 3
+	batchEfficiencyCoefficient = 5
 
 	// Amount of concurrent writers that will try to write data in forwarder
-	goroutines = 1000
+	goroutines = 300
 
 	// Amount of data that will be aggregated into a batch
 	batchSize = 200
@@ -25,7 +23,7 @@ const (
 	writeDelay = time.Millisecond * 3
 
 	// Size of buffers of internal channels
-	channelBuffer = 1
+	channelBuffer = 32
 )
 
 type (
@@ -61,31 +59,38 @@ func (b *BenchForwarder) Close() {
 func BenchmarkBufferedForwarder(b *testing.B) {
 	// Default slice batching is used here
 	sbp := SliceBatchProducer[[]byte](batchSize)
+
 	fwd := BenchForwarder{
 		d:  writeDelay,
 		mu: sync.Mutex{},
 	}
+
 	bfwd := NewBufferedForwarder(Config[[][]byte, []byte]{
 		BatchProducer:         &sbp,
 		Forwarder:             &fwd,
 		ChannelsBuffer:        channelBuffer,
-		BatchingConcurrency:   runtime.NumCPU(),
-		ForwardingConcurrency: runtime.NumCPU(),
+		BatchingConcurrency:   runtime.NumCPU() / 2,
+		ForwardingConcurrency: runtime.NumCPU() / 2,
 	})
+
 	var wg sync.WaitGroup
 
 	b.ResetTimer()
 
-	wg.Add(goroutines)
-	for j := 0; j < goroutines; j++ {
-		go func() {
-			bfwd.Write(nil)
-			wg.Done()
-		}()
+	for i := 0; i < b.N; i++ {
+		wg.Add(goroutines)
+		for j := 0; j < goroutines; j++ {
+			go func() {
+				bfwd.Write(nil)
+				wg.Done()
+			}()
+		}
+		wg.Wait()
 	}
-	wg.Wait()
+
 	bfwd.Close()
-	if fwd.i != goroutines {
+
+	if fwd.i != goroutines*b.N {
 		b.Fatal("MISMATCH")
 	}
 }
@@ -97,15 +102,18 @@ func BenchmarkForwarder(b *testing.B) {
 		mu: sync.Mutex{},
 	}
 
-	wg.Add(goroutines)
-	for j := 0; j < goroutines; j++ {
-		go func() {
-			fwd.Forward(nil)
-			wg.Done()
-		}()
+	for i := 0; i < b.N; i++ {
+		wg.Add(goroutines)
+		for j := 0; j < goroutines; j++ {
+			go func() {
+				fwd.Forward(nil)
+				wg.Done()
+			}()
+		}
+		wg.Wait()
 	}
-	wg.Wait()
-	if fwd.i != goroutines {
+
+	if fwd.i != goroutines*b.N {
 		b.Fatal("MISMATCH")
 	}
 }
