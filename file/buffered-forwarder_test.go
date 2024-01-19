@@ -9,29 +9,37 @@ import (
 )
 
 const (
-	batchMaxLen           = 128
-	forwarderMaxBufferLen = 10_000
-	channelsBuffer        = 1
+	// Amount of data that will be aggregated into a batch
+	testBatchSize = 100
 
-	maxNumbers = 10_000_000
-	filename   = "test.txt"
+	// Maximum length of underlying buffer that will be used before writing data batch into a file
+	// Otherwise all entries will be written consequentially
+	testMaxBufferLen = 10_000
+
+	// Size of buffers of internal channels
+	channelsBuffer = 1
+
+	// Maximum numbers to write in file
+	testMaxNumbers = 10_000_000
+
+	testFilename = "test.txt"
 )
 
 func TestBufferedForwarder(t *testing.T) {
 	bufferedFile := NewBufferedForwarder(Config{
-		BatchMaxLen:           batchMaxLen,
-		Filename:              filename,
+		BatchMaxLen:           testBatchSize,
+		Filename:              testFilename,
 		LastResortWriter:      os.Stdout,
-		MaxForwarderBufferLen: forwarderMaxBufferLen,
+		MaxForwarderBufferLen: testMaxBufferLen,
 		ChannelsBuffer:        channelsBuffer,
 	})
 	defer bufferedFile.Close()
 
-	for i := 0; i < maxNumbers; i++ {
+	for i := 0; i < testMaxNumbers; i++ {
 		bufferedFile.Write([]byte(fmt.Sprintf("%d\n", i)))
 	}
 
-	file, err := os.Open(filename)
+	file, err := os.Open(testFilename)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,5 +53,5 @@ func TestBufferedForwarder(t *testing.T) {
 		}
 	}
 
-	_ = os.Remove(filename)
+	_ = os.Remove(testFilename)
 }

@@ -10,41 +10,41 @@ import (
 
 const (
 	// Amount of concurrent writers that will try to write data in forwarder
-	goroutines = 1_000
+	benchGoroutines = 1_000
 
 	// Constant is used for creating large data entries
-	stringsRepeat = 20
+	benchStringsRepeat = 20
 
 	// Amount of data that will be aggregated into a batch
-	batchSize = 200
+	benchBatchSize = 200
 
-	// Maximum length of underlying buffer that will be used before writing data batch
+	// Maximum length of underlying buffer that will be used before writing data batch into a file
 	// Otherwise all entries will be written consequentially
-	maxBufferLen = batchSize * 1_000
+	benchMaxBufferLen = benchBatchSize * 1_000
 
 	// Size of buffers of internal channels
-	channelBuffer = 32
+	benchChannelBuffer = 32
 
-	filename1 = "test-file-1.txt"
-	filename2 = "test-file-2.txt"
+	benchFilename1 = "test-bench-1.txt"
+	benchFilename2 = "test-bench-2.txt"
 )
 
 func BenchmarkFileBufferedForwarder(b *testing.B) {
 	bfwd := NewBufferedForwarder(Config{
-		BatchMaxLen:           batchSize,
-		MaxForwarderBufferLen: maxBufferLen,
-		Filename:              filename1,
+		BatchMaxLen:           benchBatchSize,
+		MaxForwarderBufferLen: benchMaxBufferLen,
+		Filename:              benchFilename1,
 		LastResortWriter:      nil, // In case of error writing file panic will occur
-		ChannelsBuffer:        channelBuffer,
+		ChannelsBuffer:        benchChannelBuffer,
 	})
 	var wg sync.WaitGroup
 
 	b.ResetTimer()
 
-	wg.Add(goroutines)
-	for j := 0; j < goroutines; j++ {
+	wg.Add(benchGoroutines)
+	for j := 0; j < benchGoroutines; j++ {
 		go func() {
-			bfwd.Write([]byte(strings.Repeat("HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n", stringsRepeat)))
+			bfwd.Write([]byte(strings.Repeat("HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n", benchStringsRepeat)))
 			wg.Done()
 		}()
 	}
@@ -54,19 +54,19 @@ func BenchmarkFileBufferedForwarder(b *testing.B) {
 
 func BenchmarkFileForwarder(b *testing.B) {
 	fwd := newForwarder(
-		filename2,
+		benchFilename2,
 		nil, // In case of error writing file panic will occur
-		maxBufferLen,
+		benchMaxBufferLen,
 	)
 
 	var wg sync.WaitGroup
 
 	b.ResetTimer()
 
-	wg.Add(goroutines)
-	for j := 0; j < goroutines; j++ {
+	wg.Add(benchGoroutines)
+	for j := 0; j < benchGoroutines; j++ {
 		go func() {
-			fwd.Forward([]byte(strings.Repeat("HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n", stringsRepeat)))
+			fwd.Forward([]byte(strings.Repeat("HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n", benchStringsRepeat)))
 			wg.Done()
 		}()
 	}
