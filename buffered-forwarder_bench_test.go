@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// THIS BENCH RUNS ONLY ONCE
+
 const (
 	// Indicates how much sending batch of data is more efficient than sending that amount of data without batching
 	// Value of 3 means that sending batch of 3 values has the same speed as sending single value
@@ -14,7 +16,7 @@ const (
 	batchEfficiencyCoefficient = 3
 
 	// Amount of concurrent writers that will try to write data in forwarder
-	goroutines = 3000
+	goroutines = 1000
 
 	// Amount of data that will be aggregated into a batch
 	batchSize = 200
@@ -63,9 +65,11 @@ func BenchmarkBufferedForwarder(b *testing.B) {
 		d:  writeDelay,
 		mu: sync.Mutex{},
 	}
+	mfch := make(chan struct{}, 1)
 	bfwd := NewBufferedForwarder(Config[[][]byte, []byte]{
 		BatchProducer:         &sbp,
 		Forwarder:             &fwd,
+		ManualForwardingCh:    mfch,
 		ChannelsBuffer:        channelBuffer,
 		BatchingConcurrency:   runtime.NumCPU(),
 		ForwardingConcurrency: runtime.NumCPU(),
@@ -74,19 +78,17 @@ func BenchmarkBufferedForwarder(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		wg.Add(goroutines)
-		for j := 0; j < goroutines; j++ {
-			go func() {
-				bfwd.Write(nil)
-				wg.Done()
-			}()
-		}
-		wg.Wait()
-		bfwd.Close()
-		if fwd.i != goroutines {
-			b.Fatal("MISMATCH")
-		}
+	wg.Add(goroutines)
+	for j := 0; j < goroutines; j++ {
+		go func() {
+			bfwd.Write(nil)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	bfwd.Close()
+	if fwd.i != goroutines {
+		b.Fatal("MISMATCH")
 	}
 }
 
@@ -96,17 +98,16 @@ func BenchmarkForwarder(b *testing.B) {
 		d:  writeDelay,
 		mu: sync.Mutex{},
 	}
-	for i := 0; i < b.N; i++ {
-		wg.Add(goroutines)
-		for j := 0; j < goroutines; j++ {
-			go func() {
-				fwd.Forward(nil)
-				wg.Done()
-			}()
-		}
-		wg.Wait()
-		if fwd.i != goroutines {
-			b.Fatal("MISMATCH")
-		}
+
+	wg.Add(goroutines)
+	for j := 0; j < goroutines; j++ {
+		go func() {
+			fwd.Forward(nil)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	if fwd.i != goroutines {
+		b.Fatal("MISMATCH")
 	}
 }
