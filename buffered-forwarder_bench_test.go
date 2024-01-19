@@ -69,8 +69,8 @@ func BenchmarkBufferedForwarder(b *testing.B) {
 		BatchProducer:         &sbp,
 		Forwarder:             &fwd,
 		ChannelsBuffer:        channelBuffer,
-		BatchingConcurrency:   runtime.NumCPU() / 2,
-		ForwardingConcurrency: runtime.NumCPU() / 2,
+		BatchingConcurrency:   runtime.NumCPU()/2 + 1,
+		ForwardingConcurrency: runtime.NumCPU()/2 + 1,
 	})
 
 	var wg sync.WaitGroup
