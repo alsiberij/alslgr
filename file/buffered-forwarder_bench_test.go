@@ -9,34 +9,35 @@ import (
 // IT IS RECOMMENDED TO ADD -benchtime=10s FLAG
 
 const (
-	// Amount of concurrent writers that will try to write data in forwarder
+	// benchGoroutines amount of concurrent writers that will try to write data in forwarder
 	benchGoroutines = 1000
 
-	// Constant is used for creating large data entries
+	// benchString constant is a data that wil be written in file
+	benchString = "HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n"
+	// benchStringsRepeat constant is used for creating large data entries
 	benchStringsRepeat = 10
-	benchString        = "HELLO WORLD FROM HERE LONG TEXT STARTS RIGHT HERE\n"
 
-	// Amount of data that will be aggregated into a batch
+	// benchBatchSize is amount of data that will be aggregated into a batch
 	benchBatchSize = 100
 
-	// Maximum length of underlying buffer that will be used before writing data batch into a file
+	// benchMaxBufferLen is maximum length of underlying buffer that will be used before writing data batch into a file
 	// Otherwise all entries will be written consequentially
 	benchMaxBufferLen = len(benchString) * benchStringsRepeat * benchBatchSize
 
-	// Size of buffers of internal channels
+	// benchChannelBuffer is a size of buffers of internal channels
 	benchChannelBuffer = 32
 
-	benchFilename1 = "test-bench-1.txt"
-	benchFilename2 = "test-bench-2.txt"
+	benchFilename1 = "test-bench-buffered-forwarder.txt"
+	benchFilename2 = "test-bench-forwarder.txt"
 )
 
 func BenchmarkFileBufferedForwarder(b *testing.B) {
 	bfwd := NewBufferedForwarder(Config{
-		BatchMaxLen:           benchBatchSize,
-		MaxForwarderBufferLen: benchMaxBufferLen,
-		Filename:              benchFilename1,
-		LastResortWriter:      nil, // In case of error writing file panic will occur
-		ChannelsBuffer:        benchChannelBuffer,
+		BatchMaxLen:               benchBatchSize,
+		MaxBufferLenBeforeWriting: benchMaxBufferLen,
+		Filename:                  benchFilename1,
+		LastResortWriter:          nil, // In case of error writing file panic will occur
+		ChannelsBuffer:            benchChannelBuffer,
 	})
 	var wg sync.WaitGroup
 

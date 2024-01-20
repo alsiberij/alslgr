@@ -9,25 +9,59 @@ import (
 )
 
 type (
+	// Config is a set of required parameters for initializing alslgr.BufferedForwarder with file writing
 	Config struct {
-		BatchMaxLen             int
-		MaxForwarderBufferLen   int
-		Filename                string
-		LastResortWriter        io.Writer
-		ChannelsBuffer          int
+		// BatchMaxLen indicates how many entries should be aggregated in a batch
+		BatchMaxLen int
+
+		// MaxBufferLenBeforeWriting is used to set the maximum length of the internal buffer
+		// which will be used before writing in file. Using it reduces amount of system calls and significantly
+		// improves performance. General formula for it is average size of entry multiplied by BatchMaxLen
+		MaxBufferLenBeforeWriting int
+
+		// Filename is the name of file which will be used for writing
+		Filename string
+
+		// LastResortWriter is an io.Writer that will be used in case of any error that my occur while writing data
+		// in file. Errors of LastResortWriter are ignored. Be careful passing nil here, in case of file write error
+		// panic will occur
+		LastResortWriter io.Writer
+
+		// ChannelsBuffer is a size of internal channels buffers. Larger values may positively affect performance
+		ChannelsBuffer int
+
+		// TimedForwardingInterval is amount of time that should pass before next automatic data forwarding. Any data
+		// that is currently batched will be passed to internal alslgr.Forwarder
 		TimedForwardingInterval time.Duration
-		TimedForwardingDoneCh   <-chan struct{}
-		SighupCh                <-chan os.Signal
-		SigHupListeningDoneCh   <-chan struct{}
+
+		// TimedForwardingDoneCh is used to stop the goroutine that sending signals for automatic forwarding. You can
+		// either close it or just send empty struct once. Notice that automatic forwarding will be disabled
+		// completely
+		TimedForwardingDoneCh <-chan struct{}
+
+		// SighupCh will be used for handling the SIGHUP signal. Receiving it will call Close on a previous file
+		// and reopen it again
+		SighupCh <-chan os.Signal
+
+		// SigHupDoneCh is used to stop the goroutine that handles SIGHUP signal. You can
+		// either close it or just send empty struct once. Notice that handling this signal will be disabled
+		// completely
+		SigHupDoneCh <-chan struct{}
 	}
 )
 
+// NewBufferedForwarder returns alslgr.BufferedForwarder with forwarding data into a file. This instance is typed
+// with []byte and uses default alslgr.SliceBatchProducer (which is typed with [][]byte here) for batching. Also, this
+// instance supports periodic automatic forwarding and handles SIGHUP signal for reopening
+// underlying file. Keep in mind that this instance uses only one batch worker and only one forward
+// worker. That approach is used in order to achieve consequential writing batched data
 func NewBufferedForwarder(config Config) alslgr.BufferedForwarder[[][]byte, []byte] {
 	bp := alslgr.SliceBatchProducer[[]byte](config.BatchMaxLen)
-	fwd := newForwarder(config.Filename, config.LastResortWriter, config.MaxForwarderBufferLen)
+
+	fwd := newForwarder(config.Filename, config.LastResortWriter, config.MaxBufferLenBeforeWriting)
 
 	reopenForwarderCh := make(chan struct{}, 1)
-	go reopenFileOnSighup(config.SigHupListeningDoneCh, config.SighupCh, reopenForwarderCh)
+	go reopenFileOnSighup(config.SigHupDoneCh, config.SighupCh, reopenForwarderCh)
 
 	var manualForwardingCh <-chan struct{}
 	if config.TimedForwardingInterval > 0 {
