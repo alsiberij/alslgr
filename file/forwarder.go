@@ -21,7 +21,7 @@ type (
 )
 
 var (
-	_ alslgr.Forwarder[[][]byte, []byte] = (*forwarder)(nil)
+	_ alslgr.Writer[[][]byte, []byte] = (*forwarder)(nil)
 )
 
 func newForwarder(filename string, lastResortWriter io.Writer, maxBufferLen int) forwarder {
@@ -59,7 +59,7 @@ func (f *forwarder) Reset() {
 	f.mu.Unlock()
 }
 
-func (f *forwarder) ForwardBatch(batch [][]byte) {
+func (f *forwarder) WriteBatch(batch [][]byte) {
 	var size int
 	for _, data := range batch {
 		size += len(data)
@@ -71,7 +71,7 @@ func (f *forwarder) ForwardBatch(batch [][]byte) {
 
 	if size > f.maxBufferLen {
 		for _, b := range batch {
-			f.Forward(b)
+			f.Write(b)
 		}
 		return
 	}
@@ -82,10 +82,10 @@ func (f *forwarder) ForwardBatch(batch [][]byte) {
 		_, _ = buf.Write(data)
 	}
 
-	f.Forward(buf.Bytes())
+	f.Write(buf.Bytes())
 }
 
-func (f *forwarder) Forward(data []byte) {
+func (f *forwarder) Write(data []byte) {
 	f.mu.Lock()
 
 	var writeSucceed bool

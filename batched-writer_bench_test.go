@@ -13,7 +13,7 @@ const (
 	// More effective batch sending means more effectivity for forwarding at all
 	batchEfficiencyCoefficient = 5
 
-	// Amount of concurrent writers that will try to write data in forwarder
+	// Amount of concurrent writers that will try to write data in writer
 	goroutines = 300
 
 	// Amount of data that will be aggregated into a batch
@@ -27,7 +27,7 @@ const (
 )
 
 type (
-	// BenchForwarder is an abstract data forwarder, which takes d time to write any data and requires exclusive access
+	// BenchForwarder is an abstract data writer, which takes d time to write any data and requires exclusive access
 	// Field i is used to check that correct amount of data was written
 	BenchForwarder struct {
 		d  time.Duration
@@ -39,14 +39,14 @@ type (
 func (b *BenchForwarder) Reset() {
 }
 
-func (b *BenchForwarder) ForwardBatch(batch [][]byte) {
+func (b *BenchForwarder) WriteBatch(batch [][]byte) {
 	b.mu.Lock()
 	time.Sleep(b.d * (time.Duration)(len(batch)/batchEfficiencyCoefficient+1))
 	b.i += len(batch)
 	b.mu.Unlock()
 }
 
-func (b *BenchForwarder) Forward(_ []byte) {
+func (b *BenchForwarder) Write(_ []byte) {
 	b.mu.Lock()
 	time.Sleep(b.d)
 	b.i++
@@ -58,19 +58,19 @@ func (b *BenchForwarder) Close() {
 
 func BenchmarkBufferedForwarder(b *testing.B) {
 	// Default slice batching is used here
-	sbp := SliceBatchProducer[[]byte](batchSize)
+	sbp := SliceProducer[[]byte](batchSize)
 
 	fwd := BenchForwarder{
 		d:  writeDelay,
 		mu: sync.Mutex{},
 	}
 
-	bfwd := NewBufferedForwarder(Config[[][]byte, []byte]{
-		BatchProducer:         &sbp,
-		Forwarder:             &fwd,
-		ChannelsBuffer:        channelBuffer,
-		BatchingConcurrency:   runtime.NumCPU()/2 + 1,
-		ForwardingConcurrency: runtime.NumCPU()/2 + 1,
+	bfwd := NewBatchedWriter(Config[[][]byte, []byte]{
+		BatchProducer:   &sbp,
+		Writer:          &fwd,
+		ChannelsBuffer:  channelBuffer,
+		BatchingWorkers: runtime.NumCPU()/2 + 1,
+		WritingWorkers:  runtime.NumCPU()/2 + 1,
 	})
 
 	var wg sync.WaitGroup
@@ -106,7 +106,7 @@ func BenchmarkForwarder(b *testing.B) {
 		wg.Add(goroutines)
 		for j := 0; j < goroutines; j++ {
 			go func() {
-				fwd.Forward(nil)
+				fwd.Write(nil)
 				wg.Done()
 			}()
 		}

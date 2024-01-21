@@ -9,7 +9,7 @@ import (
 )
 
 type (
-	// Config is a set of required parameters for initializing alslgr.BufferedForwarder with file writing
+	// Config is a set of required parameters for initializing alslgr.BatchedWriter with file writing
 	Config struct {
 		// BatchMaxLen indicates how many entries should be aggregated in a batch
 		BatchMaxLen int
@@ -31,7 +31,7 @@ type (
 		ChannelsBuffer int
 
 		// TimedForwardingInterval is amount of time that should pass before next automatic data forwarding. Any data
-		// that is currently batched will be passed to internal alslgr.Forwarder
+		// that is currently batched will be passed to internal alslgr.Writer
 		TimedForwardingInterval time.Duration
 
 		// TimedForwardingDoneCh is used to stop the goroutine that sending signals for automatic forwarding. You can
@@ -50,13 +50,13 @@ type (
 	}
 )
 
-// NewBufferedForwarder returns alslgr.BufferedForwarder with forwarding data into a file. This instance is typed
-// with []byte and uses default alslgr.SliceBatchProducer (which is typed with [][]byte here) for batching. Also, this
+// NewBufferedForwarder returns alslgr.BatchedWriter with forwarding data into a file. This instance is typed
+// with []byte and uses default alslgr.SliceProducer (which is typed with [][]byte here) for batching. Also, this
 // instance supports periodic automatic forwarding and handles SIGHUP signal for reopening
 // underlying file. Keep in mind that this instance uses only one batch worker and only one forward
 // worker. That approach is used in order to achieve consequential writing batched data
-func NewBufferedForwarder(config Config) alslgr.BufferedForwarder[[][]byte, []byte] {
-	bp := alslgr.SliceBatchProducer[[]byte](config.BatchMaxLen)
+func NewBufferedForwarder(config Config) alslgr.BatchedWriter[[][]byte, []byte] {
+	bp := alslgr.SliceProducer[[]byte](config.BatchMaxLen)
 
 	fwd := newForwarder(config.Filename, config.LastResortWriter, config.MaxBufferLenBeforeWriting)
 
@@ -68,14 +68,14 @@ func NewBufferedForwarder(config Config) alslgr.BufferedForwarder[[][]byte, []by
 		manualForwardingCh = alslgr.NewTicker(config.TimedForwardingInterval, config.TimedForwardingDoneCh)
 	}
 
-	return alslgr.NewBufferedForwarder[[][]byte, []byte](alslgr.Config[[][]byte, []byte]{
-		BatchProducer:         &bp,
-		Forwarder:             &fwd,
-		ManualForwardingCh:    manualForwardingCh,
-		ResetForwarderCh:      reopenForwarderCh,
-		ChannelsBuffer:        config.ChannelsBuffer,
-		BatchingConcurrency:   1,
-		ForwardingConcurrency: 1,
+	return alslgr.NewBatchedWriter[[][]byte, []byte](alslgr.Config[[][]byte, []byte]{
+		BatchProducer:   &bp,
+		Writer:          &fwd,
+		ManualWritingCh: manualForwardingCh,
+		ResetWriterCh:   reopenForwarderCh,
+		ChannelsBuffer:  config.ChannelsBuffer,
+		BatchingWorkers: 1,
+		WritingWorkers:  1,
 	})
 }
 

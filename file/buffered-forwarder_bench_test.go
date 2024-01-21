@@ -72,7 +72,7 @@ func BenchmarkFileForwarder(b *testing.B) {
 		wg.Add(benchGoroutines)
 		for j := 0; j < benchGoroutines; j++ {
 			go func() {
-				fwd.Forward([]byte(strings.Repeat(benchString, benchStringsRepeat)))
+				fwd.Write([]byte(strings.Repeat(benchString, benchStringsRepeat)))
 				wg.Done()
 			}()
 		}
