@@ -6,7 +6,7 @@ import (
 )
 
 type (
-	// BatchedWriter is some kind of generic buffer which accumulates data batches before writing it in destination
+	// BatchedWriter is some kind of generic buffer that accumulates data batches before writing it in destination
 	// in cases where regular writing is expensive. BatchedWriter also supports a signal channel for immediate
 	// writing all batches as well as graceful shutdown with Close method.
 	// Struct is typed with B and T, where T is data itself and B is a batch of T.
