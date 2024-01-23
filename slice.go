@@ -30,8 +30,8 @@ func (s *Slice[T]) Extract() []T {
 }
 
 type (
-	// SliceProducer can be considered as a Slice factory which returns a new slice on every NewBatch
-	// call.
+	// SliceProducer is an example of the implementation of SliceProducer interface. It can be considered as
+	// a Slice factory that returns a new slice with capacity of underlying value on every NewBatch call
 	SliceProducer[T any] int
 )
 

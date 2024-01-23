@@ -68,14 +68,14 @@ func NewBufferedForwarder(config Config) alslgr.BatchedWriter[[][]byte, []byte] 
 		manualForwardingCh = alslgr.NewTicker(config.TimedForwardingInterval, config.TimedForwardingDoneCh)
 	}
 
-	return alslgr.NewBatchedWriter[[][]byte, []byte](alslgr.Config[[][]byte, []byte]{
+	return alslgr.NewBatchedWriter[[][]byte, []byte](alslgr.BatchedWriterConfig[[][]byte, []byte]{
 		BatchProducer:   &bp,
 		Writer:          &fwd,
 		ManualWritingCh: manualForwardingCh,
 		ResetWriterCh:   reopenForwarderCh,
-		ChannelsBuffer:  config.ChannelsBuffer,
+		ChannelBuffer:   config.ChannelsBuffer,
 		BatchingWorkers: 1,
-		WritingWorkers:  1,
+		Workers:         1,
 	})
 }
 
