@@ -2,7 +2,7 @@ package alslgr
 
 import "time"
 
-func mergeChannels[T any](mainCh <-chan T, chs ...chan T) {
+func broadcastToAll[T any](mainCh <-chan T, chs ...chan T) {
 	for range mainCh {
 		for _, ch := range chs {
 			ch <- *(new(T))

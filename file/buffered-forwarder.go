@@ -71,7 +71,7 @@ func NewBufferedForwarder(config Config) alslgr.BatchedWriter[[][]byte, []byte] 
 	return alslgr.NewBatchedWriter[[][]byte, []byte](alslgr.BatchedWriterConfig[[][]byte, []byte]{
 		BatchProducer:   &bp,
 		Writer:          &fwd,
-		ManualWritingCh: manualForwardingCh,
+		SaveBatchesCh:   manualForwardingCh,
 		ResetWriterCh:   reopenForwarderCh,
 		ChannelBuffer:   config.ChannelsBuffer,
 		BatchingWorkers: 1,

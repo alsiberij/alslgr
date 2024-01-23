@@ -7,9 +7,9 @@ import (
 
 type (
 	// BatchedWriter is some kind of generic buffer that accumulates data batches before writing it in destination
-	// in cases where regular writing is expensive. BatchedWriter also supports a signal channel for immediate
+	// in cases where regular writing might be expensive. BatchedWriter also supports a signal channel for immediate
 	// writing all batches as well as graceful shutdown with Close method.
-	// Struct is typed with B and T, where T is data itself and B is a batch of T.
+	// Struct is typed with B and T, where T is data to write, and B is a batch of T's.
 	// Consider passing a copy of data in Write or WriteCtx if data can be modified outside.
 	// It is not allowed to call any methods after calling Close.
 	BatchedWriter[B, T any] struct {
@@ -24,7 +24,7 @@ type (
 		// batchProducer is used to initialize Batch inside every workerBatch
 		batchProducer BatchProducer[B, T]
 
-		// writer is used by workerWrite for writing data in destination as well as resetting internal state
+		// writer is used by workerWrite for writing data
 		writer Writer[B, T]
 
 		// dataCh is used by workerBatch to accumulate batches of data. Methods Write and WriteCtx write in it
@@ -33,11 +33,18 @@ type (
 
 		// batchCh is used for communication between workerBatch and workerWrite. After batch is ready to send,
 		// workerBatch calls Batch.Extract and sends returned value to this channel. After that, workerWrite reads
-		// sent data from it and calls Writer.WriteBatch
+		// sent data and calls Writer.WriteBatch
 		batchCh chan B
 
-		// doneCh is used for graceful shutdown of BatchedWriter. It is closing when Close is called
+		// doneCh is used for graceful shutdown of BatchedWriter as well as free its own resources. It is closing
+		// when Close is called
 		doneCh chan struct{}
+
+		// saveBatchesCh is used to manually write accumulated batches whether they are full or not.
+		// Internally, the signal received from this channel will be split and sent to every worker indicating
+		// that there is time to send data. Method SaveBatches will send to this channel, so don't close it if
+		// you consider using SaveBatches
+		saveBatchesCh chan struct{}
 
 		// resetWriterCh is used by workerWrite for safe calling of Writer.Reset when needed
 		resetWriterCh <-chan struct{}
@@ -45,17 +52,17 @@ type (
 
 	// BatchedWriterConfig is a set of required parameters for initializing BatchedWriter
 	BatchedWriterConfig[B, T any] struct {
-		// BatchProducer is needed to make new Batch inside every write worker.
-		// Not that any method of BatchProducer can be called from different goroutines if BatchingWorkers > 0
+		// BatchProducer is needed to make new Batch inside every worker.
+		// Note that the method of BatchProducer can be called from different goroutines if Workers > 0
 		BatchProducer BatchProducer[B, T]
 
 		// Writer is needed to write data in destination.
-		// Not that any method of Writer can be called from different goroutines if Workers > 0
+		// Not that any method of Writer must be safe to call from different goroutines if Workers > 0
 		Writer Writer[B, T]
 
-		// ManualWritingCh is needed to manually write all accumulated batches. Internally, signal received from this
-		// channel will be split and sent to every batch worker indication that is time to send data
-		ManualWritingCh <-chan struct{}
+		// SaveBatchesCh is needed to manually write all accumulated batches. Internally, the signal received
+		// from this channel will be split and sent to every worker indicating that there is time to send data
+		SaveBatchesCh chan struct{}
 
 		// ResetWriterCh is needed to signal that Writer.Reset must be called
 		ResetWriterCh <-chan struct{}
@@ -64,10 +71,10 @@ type (
 		ChannelBuffer int
 
 		// Workers is the number of workers that will be spawned for accumulating and writing data.
-		// Note, that having more than one workers will be more performant only in cases where exclusive access to
-		// Writer is not needed. Otherwise, it is recommended to have only one worker. Also, having one worker is
-		// necessary when consequential writing is needed and allows you not to care about synchronizing
-		// inside Writer
+		// Note that having more than one worker will be more performant only in cases where exclusive access to
+		// Writer is not needed, and keep in mind that methods of Writer could be called from different goroutines.
+		// Otherwise, it is recommended to have only one worker. Also, having one worker is necessary when
+		// consequential writing is needed, for example, writing in file
 		Workers int
 	}
 )
@@ -81,20 +88,25 @@ func NewBatchedWriter[B, T any](config BatchedWriterConfig[B, T]) BatchedWriter[
 		dataCh:            make(chan T, config.ChannelBuffer),
 		batchCh:           make(chan B, config.ChannelBuffer),
 		doneCh:            make(chan struct{}),
-		resetWriterCh:     config.ResetWriterCh,
+		saveBatchesCh:     config.SaveBatchesCh,
 	}
 
-	// This slice is needed to broadcast signal from BatchedWriterConfig.ManualWritingCh to every worker
+	if b.saveBatchesCh == nil {
+		b.saveBatchesCh = make(chan struct{}, 1)
+	}
+
+	// This slice is needed to broadcast signal from the initial channel to every worker
 	manualWriteWorkerChs := make([]chan struct{}, 0, config.Workers)
 
 	b.workersBatchingWg.Add(config.Workers)
 	for i := 0; i < config.Workers; i++ {
 		manualWriteWorkerCh := make(chan struct{}, 1)
-		manualWriteWorkerChs = append(manualWriteWorkerChs, manualWriteWorkerCh)
 		go b.workerBatch(manualWriteWorkerCh)
+
+		manualWriteWorkerChs = append(manualWriteWorkerChs, manualWriteWorkerCh)
 	}
 
-	go mergeChannels[struct{}](config.ManualWritingCh, manualWriteWorkerChs...)
+	go broadcastToAll[struct{}](b.saveBatchesCh, manualWriteWorkerChs...)
 
 	b.workersWritingWg.Add(config.Workers)
 	for i := 0; i < config.Workers; i++ {
@@ -105,12 +117,14 @@ func NewBatchedWriter[B, T any](config BatchedWriterConfig[B, T]) BatchedWriter[
 }
 
 // Write saves data to internal batch for further writing. Internally it is writing to channel, so it can be blocked
-// for a long time if writing batches is stopped for any reason
+// for a long time if writing batches is stopped for any reason. Consider passing a copy of data if data can be
+// modified outside.
 func (l *BatchedWriter[B, T]) Write(data T) {
 	l.dataCh <- data
 }
 
-// WriteCtx is same as Write but supports context and may be canceled by cancelling ctx
+// WriteCtx is the same as Write but supports context and may be canceled by cancelling ctx. Consider passing a copy
+// of data if data can be modified outside.
 func (l *BatchedWriter[B, T]) WriteCtx(ctx context.Context, data T) error {
 	select {
 	case l.dataCh <- data:
@@ -120,7 +134,11 @@ func (l *BatchedWriter[B, T]) WriteCtx(ctx context.Context, data T) error {
 	}
 }
 
-// Close gracefully stops all workers and sending remained data. Blocks until everything is completely done
+func (l *BatchedWriter[B, T]) SaveBatches() {
+	l.saveBatchesCh <- struct{}{}
+}
+
+// Close gracefully stops all workers and writing remained data. Blocks until everything is completely written
 func (l *BatchedWriter[B, T]) Close() {
 	close(l.doneCh)
 	close(l.dataCh)
@@ -132,8 +150,8 @@ func (l *BatchedWriter[B, T]) Close() {
 	l.writer.Close()
 }
 
-// workerBatch is reading from data channel, handling batch fulfilling and sending to batch channel for further writing
-func (l *BatchedWriter[B, T]) workerBatch(manualForwardCh <-chan struct{}) {
+// workerBatch is reading from the data channel, handling batch appending and writing to a batch channel
+func (l *BatchedWriter[B, T]) workerBatch(manualWritingCh <-chan struct{}) {
 	defer l.workersBatchingWg.Done()
 
 	batch := l.batchProducer.NewBatch()
@@ -145,10 +163,10 @@ func (l *BatchedWriter[B, T]) workerBatch(manualForwardCh <-chan struct{}) {
 				l.batchCh <- batch.Extract()
 				return
 			}
-			batch.Append(data)
 			if batch.IsFull() {
 				l.batchCh <- batch.Extract()
 			}
+			batch.Append(data)
 		case <-l.doneCh:
 			for data := range l.dataCh {
 				if batch.IsFull() {
@@ -158,13 +176,13 @@ func (l *BatchedWriter[B, T]) workerBatch(manualForwardCh <-chan struct{}) {
 			}
 			l.batchCh <- batch.Extract()
 			return
-		case <-manualForwardCh:
+		case <-manualWritingCh:
 			l.batchCh <- batch.Extract()
 		}
 	}
 }
 
-// workerWrite is reading from batch channel, handling batch writing and resetting internal Writer
+// workerWrite is reading from the batch channel, handling batch writing and resetting internal Writer
 func (l *BatchedWriter[B, T]) workerWrite() {
 	defer l.workersWritingWg.Done()
 
