@@ -11,8 +11,12 @@ type (
 	// writing all batches as well as graceful shutdown with Close method. Struct is typed with B and T, where T is
 	// data to write, and B is a batch of T's. Consider passing a copy of data in Write or WriteCtx if data can be
 	// modified outside. It is not allowed to call any methods after calling Close. It is not recommended to call
-	// methods of Writer outside the BatchedWriter. Zero value of this struct is not ready to use, please
-	// user NewBatchedWriter for initializing
+	// methods of Writer outside the running BatchedWriter. Zero value of this struct is not ready to use, please
+	// user NewBatchedWriter for initializing. Workers is the number of workers that will be spawned for accumulating
+	// and writing data. Note that having more than one worker will be more performant only in cases where exclusive
+	// access to Writer is not needed, but keep in mind that in this case methods of Writer could be called from
+	// different goroutines. Otherwise, it is recommended to have only one worker. Also, having one worker is
+	// necessary when consequential writing is needed, for example, writing in file
 	BatchedWriter[B, T any] struct {
 		// workersBatchingWg is used for waiting until all workerBatch are stopped
 		workersBatchingWg *sync.WaitGroup
@@ -131,8 +135,6 @@ func (l *BatchedWriter[B, T]) Close() {
 
 	close(l.saveBatchesCh)
 	close(l.resetWriterCh)
-
-	l.writer.Close()
 }
 
 // workerBatch is reading from the data channel, handling batch appending and writing to a batch channel

@@ -14,9 +14,6 @@ type (
 
 		// Write is needed to allow writing non-aggregated data. This method may be called only when Close is called
 		Write(data T)
-
-		// Close is needed to gracefully stop Writer and handle closing of any underlying entities
-		Close()
 	}
 
 	// Batch is a representation of data aggregator. No methods of Batch will be called from different goroutines, so
@@ -41,8 +38,8 @@ type (
 		Extract() B
 	}
 
-	// BatchProducer is used for creating new Batch's. Method NewBatch will be called only once per
-	// BatchedWriter worker, and in case of multiple workers must allow safe calls from different goroutines
+	// BatchProducer is used for creating new Batch's. Method NewBatch will be called only once per BatchedWriter
+	// worker, and in case of multiple workers must allow safe calls from different goroutines
 	BatchProducer[B, T any] interface {
 		//NewBatch must return new Batch
 		NewBatch() Batch[B, T]
