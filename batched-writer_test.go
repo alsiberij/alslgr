@@ -2,8 +2,10 @@ package alslgr
 
 import (
 	"context"
+	"os"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -37,12 +39,13 @@ const (
 
 type (
 	writer struct {
-		poolCh chan *int64
+		poolCh        chan *int64
+		resetIsCalled bool
 	}
 )
 
 func (w *writer) Reset() {
-	// No op
+	w.resetIsCalled = true
 }
 
 func (w *writer) WriteBatch(batch [][]byte) {
@@ -165,5 +168,50 @@ func TestBatchedWriterTicker(t *testing.T) {
 
 	if sum != expected {
 		t.Fatalf("Expected %d, got %d", expected, sum)
+	}
+}
+
+func TestBatchedWriterSigHup(t *testing.T) {
+	sigCh := make(chan os.Signal)
+
+	// Initializing imitated connections pool
+	w := writer{
+		poolCh: make(chan *int64, writerPoolSize),
+	}
+	for i := 0; i < writerPoolSize; i++ {
+		w.poolCh <- new(int64)
+	}
+
+	// Initialing slice batch producer
+	bp := SliceProducer[[]byte](batchMaxSize)
+
+	// Initializing BatchedWriter
+	bw := NewBatchedWriter[[][]byte, []byte](&bp, &w, batchedWriterWorkers)
+
+	defer close(ResetWriterOnSigHup(&bw, sigCh))
+
+	wg := sync.WaitGroup{}
+
+	for i := 0; i < goroutinesWriting; i++ {
+		wg.Add(1)
+		go func() {
+			for j := 0; j < dataRepeatPerGoroutineWriting; j++ {
+				bw.Write(nil)
+			}
+			wg.Done()
+		}()
+	}
+
+	go func() {
+		sigCh <- syscall.SIGHUP
+	}()
+
+	wg.Wait()
+
+	bw.Close()
+	w.Close()
+
+	if !w.resetIsCalled {
+		t.Fatalf("Reset was not called")
 	}
 }

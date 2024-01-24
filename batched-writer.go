@@ -55,7 +55,8 @@ type (
 	}
 )
 
-// NewBatchedWriter returns new BatchedWriter with initialized BatchedProducer, Writer and specified number of workers
+// NewBatchedWriter returns new BatchedWriter with initialized BatchedProducer, Writer and specified number of workers.
+// For more details see BatchedWriter docs
 func NewBatchedWriter[B, T any](
 	batchProducer BatchProducer[B, T],
 	writer Writer[B, T],
@@ -179,6 +180,14 @@ func (l *BatchedWriter[B, T]) workerWrite() {
 			l.writer.WriteBatch(batch)
 		case <-l.resetWriterCh:
 			l.writer.Reset()
+		}
+	}
+}
+
+func broadcastToAllChannels[T any](mainCh <-chan T, chs ...chan T) {
+	for range mainCh {
+		for _, ch := range chs {
+			ch <- *(new(T))
 		}
 	}
 }

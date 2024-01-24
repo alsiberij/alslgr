@@ -9,7 +9,7 @@ import (
 )
 
 type (
-	forwarder struct {
+	writer struct {
 		filename string
 
 		mu               *sync.Mutex
@@ -21,35 +21,31 @@ type (
 )
 
 var (
-	_ alslgr.Writer[[][]byte, []byte] = (*forwarder)(nil)
+	_ alslgr.Writer[[][]byte, []byte] = (*writer)(nil)
 )
 
-func newForwarder(filename string, lastResortWriter io.Writer, maxBufferLen int) forwarder {
-	var w io.WriteCloser
-
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err == nil {
-		w = file
+func newWriter(filename string, lastResortWriter io.Writer, maxBufferLen int) (writer, error) {
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0644)
+	if err != nil {
+		return writer{}, err
 	}
 
-	f := forwarder{
+	return writer{
 		mu:               &sync.Mutex{},
-		writerCloser:     w,
+		writerCloser:     file,
 		lastResortWriter: lastResortWriter,
 		maxBufferLen:     maxBufferLen,
-	}
-
-	return f
+	}, nil
 }
 
-func (f *forwarder) Reset() {
+func (f *writer) Reset() {
 	f.mu.Lock()
 
 	if f.writerCloser != nil {
 		_ = f.writerCloser.Close()
 	}
 
-	file, err := os.OpenFile(f.filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(f.filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0644)
 	if err != nil {
 		f.writerCloser = nil
 	} else {
@@ -59,7 +55,7 @@ func (f *forwarder) Reset() {
 	f.mu.Unlock()
 }
 
-func (f *forwarder) WriteBatch(batch [][]byte) {
+func (f *writer) WriteBatch(batch [][]byte) {
 	var size int
 	for _, data := range batch {
 		size += len(data)
@@ -85,7 +81,7 @@ func (f *forwarder) WriteBatch(batch [][]byte) {
 	f.Write(buf.Bytes())
 }
 
-func (f *forwarder) Write(data []byte) {
+func (f *writer) Write(data []byte) {
 	f.mu.Lock()
 
 	var writeSucceed bool
@@ -105,7 +101,7 @@ func (f *forwarder) Write(data []byte) {
 	f.mu.Unlock()
 }
 
-func (f *forwarder) Close() {
+func (f *writer) Close() {
 	f.mu.Lock()
 	if f.writerCloser != nil {
 		_ = f.writerCloser.Close()
