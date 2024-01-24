@@ -132,9 +132,6 @@ func (l *BatchedWriter[B, T]) Close() {
 
 	close(l.batchCh)
 	l.workersWritingWg.Wait()
-
-	close(l.saveBatchesCh)
-	close(l.resetWriterCh)
 }
 
 // workerBatch is reading from the data channel, handling batch appending and writing to a batch channel
