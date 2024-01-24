@@ -148,16 +148,22 @@ func (l *BatchedWriter[B, T]) workerBatch(manualWritingCh <-chan struct{}) {
 				l.batchCh <- batch.Extract()
 				return
 			}
-			if batch.IsFull() {
+
+			if !batch.TryAppend(data) { // First failed append writes existing batch to channel to try to free space in batch
 				l.batchCh <- batch.Extract()
-			}
-			batch.Append(data)
-		case <-l.doneCh:
-			for data := range l.dataCh {
-				if batch.IsFull() {
-					l.batchCh <- batch.Extract()
+				if !batch.TryAppend(data) { // Second failed append directly packs data into a batch and sends in channel
+					l.batchCh <- batch.Pack(data)
 				}
-				batch.Append(data)
+			}
+		case <-l.doneCh:
+			// In case of receiving cancel signal we must iterate over data channel for not loosing any data
+			for data := range l.dataCh {
+				if !batch.TryAppend(data) {
+					l.batchCh <- batch.Extract()
+					if !batch.TryAppend(data) {
+						l.batchCh <- batch.Pack(data)
+					}
+				}
 			}
 			l.batchCh <- batch.Extract()
 			return

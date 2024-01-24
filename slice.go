@@ -11,14 +11,14 @@ var (
 	_ Batch[[]any, any] = (*Slice[any])(nil)
 )
 
-// IsFull returns true when the length of the underlying slice equals its capacity
-func (s *Slice[T]) IsFull() bool {
-	return len(*s) == cap(*s)
-}
-
-// Append appends data to the underlying slice
-func (s *Slice[T]) Append(data T) {
+// TryAppend appends data to the underlying slice and returns true when the length of the underlying slice is
+// less its capacity, false otherwise
+func (s *Slice[T]) TryAppend(data T) bool {
+	if len(*s) == cap(*s) {
+		return false
+	}
 	*s = append(*s, data)
+	return true
 }
 
 // Extract returns a copy of the underlying slice and resets the length of the original one to zero for further reuse
@@ -27,6 +27,11 @@ func (s *Slice[T]) Extract() []T {
 	copy(cp, *s)
 	*s = (*s)[:0]
 	return cp
+}
+
+// Pack packs data into a new slice
+func (s *Slice[T]) Pack(data T) []T {
+	return []T{data}
 }
 
 type (

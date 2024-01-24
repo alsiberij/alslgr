@@ -31,10 +31,10 @@ const (
 	goroutinesWriting = 100
 
 	// dataRepeatPerGoroutineWriting is a number of repeats of data inside every writing goroutine
-	dataRepeatPerGoroutineWriting = 10000
+	dataRepeatPerGoroutineWriting = 1000
 
 	// savingBatchesTickerInterval is the time between writing accumulated batches whether that are ready or not
-	savingBatchesTickerInterval = time.Second
+	savingBatchesTickerInterval = time.Second / 10
 )
 
 type (

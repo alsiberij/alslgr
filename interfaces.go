@@ -17,25 +17,26 @@ type (
 	}
 
 	// Batch is a representation of data aggregator. No methods of Batch will be called from different goroutines, so
-	// you don't need to carry about it, but it is required for Extract to return copy of underlying data. General
-	// flow is - calling Append with new data until IsFull will return true, then call Extract to retrieve copy
-	// of batched data which will be written by any of the workers of BatchedWriter.
-	// Batch is typed with B and T, where T is data to write, and B is a batch of T's. You can find implemented
-	// slice batching in Slice and SliceProducer structs
+	// you don't need to carry about it, but it is required for Extract to return copy of underlying data and reset
+	// its internal state for reusing resources. Batch is typed with B and T, where T is data to write, and B is
+	// a batch of T's. You can find implemented slice batching in Slice and SliceProducer structs
 	Batch[B, T any] interface {
-		// IsFull should indicate when batch is ready to write. Please note that time-based batch writing
-		// (for example, writing batches every N seconds no matter is it full or not) is recommended to implement via
-		// SaveBatchesCh of BatchedWriterConfig, but not in Batch. This approach will more effectively
-		// use available resources. See Slice.IsFull for example
-		IsFull() bool
+		// TryAppend should try to save data in the underlying collection and return whether saving was successful.
+		// If not, method Extract will be called in order to try to free space. If second call of TryAppend
+		// returns false, method Pack will be used. See Slice.TryAppend for example
+		TryAppend(data T) bool
 
-		// Append should save data in the underlying collection. See Slice.Append for example
-		Append(data T)
-
-		// Extract should retrieve copy of the underlying batch and reset the underlying collection. It is required
-		// to return copy because there are no guaranties that B will be written by Writer.WriteBatch before
-		// the next Append call. See Slice.Extract for example
+		// Extract should retrieve copy of the underlying batch and reset the underlying collection for further reuse.
+		// It is required to return copy because there are no guaranties that B will be written by Writer.WriteBatch
+		// before the next TryAppend call. See Slice.Extract for example
 		Extract() B
+
+		// Pack should be able to pack single T into a B. In some cases, when you have specific limitations on
+		// underlying collection, a single data entry can not be fit into a regular batch, so this method will be used.
+		// For example, you have []byte and []byte for B and T (batch is just a large buffer) and limitation for
+		// batch that it should be less than 1 kilobyte. But for some reason you want to write a 2 kilobyte data.
+		// In this case it should be packed directly into a specific batch in order to not exceed regular limitation.
+		Pack(data T) B
 	}
 
 	// BatchProducer is used for creating new Batch's. Method NewBatch will be called only once per BatchedWriter
