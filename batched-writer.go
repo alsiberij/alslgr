@@ -149,9 +149,9 @@ func (l *BatchedWriter[B, T]) workerBatch(manualWritingCh <-chan struct{}) {
 				return
 			}
 
-			if !batch.TryAppend(data) { // First failed append writes existing batch to channel to try to free space in batch
+			if !batch.TryAppend(data) { // At first failed append we must write existing batch to channel to try to free space in batch
 				l.batchCh <- batch.Extract()
-				if !batch.TryAppend(data) { // Second failed append directly packs data into a batch and sends in channel
+				if !batch.TryAppend(data) { // At second failed append we must directly pack data into a batch and send it in channel
 					l.batchCh <- batch.Pack(data)
 				}
 			}
