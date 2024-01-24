@@ -21,7 +21,7 @@ const (
 	dataRepeatPerGoroutineWriting = 10000
 
 	// batchMaxLength is maximum length of internal []byte buffer
-	batchMaxLength = 1000
+	batchMaxLength = 1_000_000
 
 	fileName = "batched-writer_test.txt"
 )
@@ -67,6 +67,7 @@ func TestBatchedWriter(t *testing.T) {
 	}
 
 	s := bufio.NewScanner(f)
+	s.Buffer(make([]byte, 0, batchMaxLength*2), batchMaxLength*2)
 
 	// True in checkList[i][j] means that i'th goroutine successfully wrote j'th repeat of data
 	checkList := make([][]bool, goroutinesWriting)
