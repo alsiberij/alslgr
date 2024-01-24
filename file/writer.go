@@ -1,7 +1,6 @@
 package file
 
 import (
-	"bytes"
 	"github.com/alsiberij/alslgr/v3"
 	"io"
 	"os"
@@ -15,26 +14,24 @@ type (
 		mu               *sync.Mutex
 		writerCloser     io.WriteCloser
 		lastResortWriter io.Writer
-
-		maxBufferLen int
 	}
 )
 
 var (
-	_ alslgr.Writer[[][]byte, []byte] = (*writer)(nil)
+	_ alslgr.Writer[[]byte, []byte] = (*writer)(nil)
 )
 
-func newWriter(filename string, lastResortWriter io.Writer, maxBufferLen int) (writer, error) {
+func newWriter(filename string, lastResortWriter io.Writer) (writer, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0644)
 	if err != nil {
 		return writer{}, err
 	}
 
 	return writer{
+		filename:         filename,
 		mu:               &sync.Mutex{},
 		writerCloser:     file,
 		lastResortWriter: lastResortWriter,
-		maxBufferLen:     maxBufferLen,
 	}, nil
 }
 
@@ -55,30 +52,8 @@ func (f *writer) Reset() {
 	f.mu.Unlock()
 }
 
-func (f *writer) WriteBatch(batch [][]byte) {
-	var size int
-	for _, data := range batch {
-		size += len(data)
-	}
-
-	if size == 0 {
-		return
-	}
-
-	if size > f.maxBufferLen {
-		for _, b := range batch {
-			f.Write(b)
-		}
-		return
-	}
-
-	buf := bytes.NewBuffer(make([]byte, 0, size))
-
-	for _, data := range batch {
-		_, _ = buf.Write(data)
-	}
-
-	f.Write(buf.Bytes())
+func (f *writer) WriteBatch(batch []byte) {
+	f.Write(batch)
 }
 
 func (f *writer) Write(data []byte) {

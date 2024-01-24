@@ -62,6 +62,7 @@ func NewBatchedWriter[B, T any](
 	writer Writer[B, T],
 	workers int,
 ) BatchedWriter[B, T] {
+
 	b := BatchedWriter[B, T]{
 		workersBatchingWg: &sync.WaitGroup{},
 		workersWritingWg:  &sync.WaitGroup{},
@@ -133,6 +134,8 @@ func (l *BatchedWriter[B, T]) Close() {
 
 	close(l.batchCh)
 	l.workersWritingWg.Wait()
+
+	l.writer.Close()
 }
 
 // workerBatch is reading from the data channel, handling batch appending and writing to a batch channel

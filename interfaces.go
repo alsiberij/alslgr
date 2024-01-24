@@ -14,6 +14,9 @@ type (
 
 		// Write is needed to allow writing non-aggregated data. This method may be called only when Close is called
 		Write(data T)
+
+		// Close is needed to gracefully stop Writer and handle closing of any underlying entities
+		Close()
 	}
 
 	// Batch is a representation of data aggregator. No methods of Batch will be called from different goroutines, so

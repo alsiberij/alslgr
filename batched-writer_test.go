@@ -119,7 +119,6 @@ func TestBatchedWriter(t *testing.T) {
 	wg.Wait()
 
 	bw.Close()
-	w.Close()
 
 	sum := w.Sum()
 	expected := goroutinesWriting*(dataRepeatPerGoroutineWriting/2)*2 - contextWriteCorrection.Load()
@@ -161,7 +160,6 @@ func TestBatchedWriterTicker(t *testing.T) {
 	wg.Wait()
 
 	bw.Close()
-	w.Close()
 
 	sum := w.Sum()
 	expected := int64(goroutinesWriting * dataRepeatPerGoroutineWriting)
@@ -209,7 +207,6 @@ func TestBatchedWriterSigHup(t *testing.T) {
 	wg.Wait()
 
 	bw.Close()
-	w.Close()
 
 	if !w.resetIsCalled {
 		t.Fatalf("Reset was not called")
