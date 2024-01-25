@@ -101,3 +101,62 @@ func TestBatchedWriter(t *testing.T) {
 	_ = f.Close()
 	_ = os.Remove(fileName)
 }
+
+const (
+	benchFileName1 = "batched-writer_test_bench1.txt"
+	benchFileName2 = "batched-writer_test_bench2.txt"
+)
+
+func BenchmarkBatchedWriter(b *testing.B) {
+	bw, err := NewBatchedWriter(batchMaxLength, benchFileName1, nil)
+	if err != nil {
+		b.Fatalf("Unexpected error: %v\n", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var wg sync.WaitGroup
+		for j := 0; j < goroutinesWriting; j++ {
+			wg.Add(1)
+			go func(i int) {
+				for k := 0; k < dataRepeatPerGoroutineWriting; k++ {
+					bw.Write([]byte("HELLO WORLD\n"))
+				}
+				wg.Done()
+			}(j)
+		}
+		wg.Wait()
+	}
+
+	bw.Close()
+
+	b.StopTimer()
+	_ = os.Remove(benchFileName1)
+}
+
+func BenchmarkWriter(b *testing.B) {
+	w, err := newWriter(benchFileName2, nil)
+	if err != nil {
+		b.Fatalf("Unexpected error: %v\n", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var wg sync.WaitGroup
+		for j := 0; j < goroutinesWriting; j++ {
+			wg.Add(1)
+			go func(i int) {
+				for k := 0; k < dataRepeatPerGoroutineWriting; k++ {
+					w.Write([]byte("HELLO WORLD\n"))
+				}
+				wg.Done()
+			}(j)
+		}
+		wg.Wait()
+	}
+
+	w.Close()
+
+	b.StopTimer()
+	_ = os.Remove(benchFileName1)
+}

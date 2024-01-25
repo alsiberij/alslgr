@@ -12,20 +12,20 @@ import (
 
 const (
 	// batchEfficiency shows much is more efficient to send batch of data than doing it one by one
-	batchEfficiency = 100
+	batchEfficiency = 10
 
 	// writerSleepTime is an imitation of I/O delay per one data entry
 	writerSleepTime = time.Millisecond * 3
 
 	// writerPoolSize is a size of imitated connection pool. In this test Writer doesn't require exclusive access,
 	// so we can use multiple workers (Number of workers should be <= writerPoolSize)
-	writerPoolSize = 16
+	writerPoolSize = 10
 
 	// batchMaxSize is a maximum size of every accumulated batch
-	batchMaxSize = 100
+	batchMaxSize = 1000
 
 	// batchedWriterWorkers is a number of workers used by BatchedWriter
-	batchedWriterWorkers = 16
+	batchedWriterWorkers = 10
 
 	// goroutinesWriting is a number of goroutines that will write data in BatchedWriter
 	goroutinesWriting = 100
@@ -210,5 +210,65 @@ func TestBatchedWriterSigHup(t *testing.T) {
 
 	if !w.resetIsCalled {
 		t.Fatalf("Reset was not called")
+	}
+}
+
+func BenchmarkBatchedWriter(b *testing.B) {
+	// Initializing imitated connections pool
+	w := writer{
+		poolCh: make(chan *int64, writerPoolSize),
+	}
+	for i := 0; i < writerPoolSize; i++ {
+		w.poolCh <- new(int64)
+	}
+
+	// Initialing slice batch producer
+	bp := SliceProducer[[]byte](batchMaxSize)
+
+	// Initializing BatchedWriter
+	bw := NewBatchedWriter[[][]byte, []byte](&bp, &w, batchedWriterWorkers)
+
+	wg := sync.WaitGroup{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < goroutinesWriting/10; j++ {
+			wg.Add(1)
+			go func() {
+				for k := 0; k < dataRepeatPerGoroutineWriting/10; k++ {
+					bw.Write(nil)
+				}
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+	}
+
+	bw.Close()
+}
+
+func BenchmarkWriter(b *testing.B) {
+	// Initializing imitated connections pool
+	w := writer{
+		poolCh: make(chan *int64, writerPoolSize),
+	}
+	for i := 0; i < writerPoolSize; i++ {
+		w.poolCh <- new(int64)
+	}
+
+	wg := sync.WaitGroup{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < goroutinesWriting/10; j++ {
+			wg.Add(1)
+			go func() {
+				for k := 0; k < dataRepeatPerGoroutineWriting/10; k++ {
+					w.Write(nil)
+				}
+				wg.Done()
+			}()
+		}
+		wg.Wait()
 	}
 }
