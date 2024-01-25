@@ -8,6 +8,8 @@ import (
 )
 
 type (
+	// writer implements alslgr.Writer with []byte for B and T and writes data in internal file.
+	// If any error occurs, lastResortWriter will be used. Calling Reset will reopen same file.
 	writer struct {
 		filename string
 
